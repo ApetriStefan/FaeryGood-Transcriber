@@ -4462,14 +4462,9 @@ class FaeryTranscriberApp(ctk.CTk):
         )
         self.radio_close_btn.pack(side="left")
 
-        # The radio/music player UI should be hidden unless the radio toggle is on.
-        if self.config.radio_enabled:
-            self.radio_toggle.select()
-            self.radio_player_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 14))
-            self.radio_controller.start()
-        else:
-            self.radio_toggle.deselect()
-            self.radio_player_frame.grid_forget()
+        # The radio/music player UI should be off and hidden by default when opening the app.
+        self.radio_toggle.deselect()
+        self.radio_player_frame.grid_forget()
 
     def _on_radio_toggle_changed(self) -> None:
         """Called when the 📻 Radio toggle switch in the header is flipped."""

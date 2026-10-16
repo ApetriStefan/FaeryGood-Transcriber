@@ -639,17 +639,15 @@ class TestFaeryRadio(unittest.TestCase):
         app.withdraw()
 
         try:
-            # 1. Radio toggle switch must exist and be named Radio
+            # 1. Radio toggle switch must exist, be named Radio, and be OFF (0) by default
             self.assertIsNotNone(app.radio_toggle)
             self.assertIn("Radio", app.radio_toggle.cget("text"))
+            self.assertEqual(app.radio_toggle.get(), 0, "Radio toggle must be OFF (0) by default when opening the app")
 
-            # 2. Player frame must exist
+            # 2. Player frame must exist and be hidden by default
             self.assertIsNotNone(app.radio_player_frame)
-
-            # 3. If toggle is OFF, player must be hidden
-            app.radio_toggle.deselect()
-            app._on_radio_toggle_changed()
-            self.assertEqual(len(app.radio_player_frame.grid_info()), 0, "Player must be hidden when toggle is off")
+            self.assertEqual(len(app.radio_player_frame.grid_info()), 0, "Player must be hidden by default")
+            self.assertFalse(app.radio_controller.is_playing, "Radio music must not be playing by default")
 
             # 4. If toggle is ON, player must be displayed in row 2
             app.radio_toggle.select()
