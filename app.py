@@ -33,6 +33,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.parse
 import webbrowser
 from dataclasses import dataclass
 from datetime import datetime
@@ -60,7 +61,7 @@ from faster_whisper import WhisperModel
 # Constants, Brand Palette & Enums (Tailored for Faery Good - faerygood.com)
 # ---------------------------------------------------------------------------
 APP_NAME = "Faery Good Transcriber"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 FAERY_GOOD_TAGLINE = "Whimsy is Power"
 FAERY_GOOD_SUBTITLE = "Small Batch, Whimsical Apothecary for the Tender Hearted"
 FAERY_GOOD_URL = "https://faerygood.com/"
@@ -82,6 +83,15 @@ MODEL_DISPLAY_NAMES = {
     "Standard (base.en - Fast)": "base.en",
 }
 DEFAULT_MODEL_DISPLAY = "High Accuracy (small.en - Recommended)"
+
+COOKIE_BROWSER_OPTIONS = {
+    "Auto / Public (Recommended)": None,
+    "Safari (macOS)": "safari",
+    "Chrome": "chrome",
+    "Firefox": "firefox",
+    "Edge": "edge",
+}
+DEFAULT_COOKIE_BROWSER = "Auto / Public (Recommended)"
 
 MIN_DISK_SPACE_MB = 500  # Minimum free disk space in MB required for scratch audio conversion
 
@@ -480,6 +490,7 @@ class ConfigManager:
             "model_selection": DEFAULT_MODEL_DISPLAY,
             "appearance_mode": "Light",
             "last_media_directory": "",
+            "cookie_browser": DEFAULT_COOKIE_BROWSER,
         }
         self.load()
 
@@ -535,6 +546,16 @@ class ConfigManager:
     @appearance_mode.setter
     def appearance_mode(self, mode: str) -> None:
         self.data["appearance_mode"] = mode
+        self.save()
+
+    @property
+    def cookie_browser(self) -> str:
+        val = self.data.get("cookie_browser", DEFAULT_COOKIE_BROWSER)
+        return val if val in COOKIE_BROWSER_OPTIONS else DEFAULT_COOKIE_BROWSER
+
+    @cookie_browser.setter
+    def cookie_browser(self, browser_label: str) -> None:
+        self.data["cookie_browser"] = browser_label
         self.save()
 
     def get_initial_media_dir(self) -> Path:
@@ -882,6 +903,224 @@ class MediaProcessor:
             raise RuntimeError(f"FFmpeg audio extraction failed:\n{(stderr or '').strip()}")
 
 
+@dataclass
+class OnlineClipInfo:
+    """Represents metadata and temporary local audio path for a downloaded online clip."""
+    url: str
+    platform: str
+    title: str
+    sanitized_title: str
+    video_id: str
+    duration_seconds: float
+    temp_media_path: Path
+
+
+class OnlineMediaFetcher:
+    """
+    Fetches temporary audio streams from Instagram, YouTube, TikTok, Facebook, and 1,000+ sites
+    using yt-dlp and the bundled static FFmpeg binary. Strictly writes into a caller-managed
+    TemporaryDirectory so zero media files remain after transcription.
+    """
+
+    ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+    @staticmethod
+    def is_valid_url(url_str: str) -> bool:
+        """Returns True if url_str is a well-formed HTTP/HTTPS URL."""
+        cleaned = (url_str or "").strip()
+        if not cleaned:
+            return False
+        try:
+            parsed = urllib.parse.urlparse(cleaned)
+            return parsed.scheme in ("http", "https") and bool(parsed.netloc) and "." in parsed.netloc
+        except Exception:
+            return False
+
+    @staticmethod
+    def detect_platform(url_str: str) -> str:
+        """Returns a human-friendly platform name for UI badges and status messages."""
+        try:
+            host = urllib.parse.urlparse((url_str or "").strip()).netloc.lower()
+        except Exception:
+            host = ""
+        if "instagram.com" in host or "instagr.am" in host:
+            return "Instagram"
+        if "youtube.com" in host or "youtu.be" in host:
+            return "YouTube"
+        if "tiktok.com" in host:
+            return "TikTok"
+        if "facebook.com" in host or "fb.watch" in host or "fb.com" in host:
+            return "Facebook"
+        return "Web Video"
+
+    @staticmethod
+    def sanitize_title(raw_title: str, fallback: str = "Online_Clip") -> str:
+        """Cleans an online video title into a safe, readable cross-platform filename stem."""
+        if not raw_title:
+            return fallback
+        # Strip filesystem-unsafe characters and control characters
+        cleaned = re.sub(r'[\\/*?:"<>|\r\n\t]+', " ", raw_title)
+        cleaned = "".join(ch for ch in cleaned if ch.isprintable())
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" .-_")
+        if len(cleaned) > 80:
+            cleaned = cleaned[:80].rstrip(" .-_")
+        return cleaned if cleaned else fallback
+
+    @classmethod
+    def clean_error_message(cls, raw_err: str, platform: str) -> str:
+        """Strips ANSI escape sequences and formats a friendly error message for creators."""
+        clean = cls.ANSI_ESCAPE_RE.sub("", str(raw_err or "")).strip()
+        clean = re.sub(r"^ERROR:\s*", "", clean, flags=re.IGNORECASE)
+        lower = clean.lower()
+        if any(k in lower for k in ("login required", "sign in", "cookies", "rate-limit", "private", "not available")):
+            return (
+                f"{platform} requires you to be logged in to access this clip (or the post is private).\n\n"
+                "💡 Tip: In the 'Social Login' dropdown under Studio Preferences, select the browser "
+                "where you are logged into your account (e.g. Safari or Chrome) and click Generate again!\n\n"
+                f"Technical details: {clean}"
+            )
+        return f"Could not download audio from {platform} link:\n\n{clean}"
+
+    @classmethod
+    def download_audio_to_temp(
+        cls,
+        url: str,
+        temp_dir: Path,
+        cancel_event: threading.Event,
+        status_cb: Callable[[str], None],
+        progress_cb: Callable[[float], None],
+        cookie_browser_label: str = DEFAULT_COOKIE_BROWSER,
+    ) -> OnlineClipInfo:
+        """
+        Downloads only the best audio stream for the given URL into `temp_dir`.
+        Aborts immediately if `cancel_event` is set.
+        """
+        import yt_dlp
+
+        if not cls.is_valid_url(url):
+            raise ValueError("Please enter a valid link starting with https:// or http://")
+
+        if cancel_event.is_set():
+            raise InterruptedError("Download was cancelled by the user.")
+
+        platform = cls.detect_platform(url)
+        status_cb(f"🌐 Connecting to {platform} and inspecting link...")
+
+        def _progress_hook(d: dict) -> None:
+            if cancel_event.is_set():
+                raise InterruptedError("Download was cancelled by the user.")
+            st = d.get("status")
+            if st == "downloading":
+                downloaded = d.get("downloaded_bytes") or 0
+                total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+                if total > 0:
+                    pct = min(0.99, max(0.01, downloaded / total))
+                    progress_cb(pct)
+                    status_cb(f"📥 Downloading temporary audio from {platform} ({int(pct * 100)}%)...")
+                else:
+                    status_cb(f"📥 Downloading temporary audio from {platform}...")
+            elif st == "finished":
+                status_cb(f"✨ {platform} audio fetched! Preparing 16kHz mono stream...")
+
+        outtmpl = str(temp_dir / "online_source_%(id)s.%(ext)s")
+        base_opts = {
+            "format": "bestaudio/best",
+            "outtmpl": outtmpl,
+            "noplaylist": True,
+            "quiet": True,
+            "no_warnings": True,
+            "ffmpeg_location": get_verified_ffmpeg_exe(),
+            "progress_hooks": [_progress_hook],
+            "socket_timeout": 20,
+            "retries": 2,
+        }
+
+        chosen_browser = COOKIE_BROWSER_OPTIONS.get(cookie_browser_label)
+        attempts: List[Optional[str]] = []
+        if chosen_browser:
+            attempts.append(chosen_browser)
+        else:
+            # First try public (no cookies); if auth fails, automatically try installed browsers
+            attempts.append(None)
+            if sys.platform == "darwin":
+                attempts.extend(["safari", "chrome", "firefox"])
+            else:
+                attempts.extend(["chrome", "edge", "firefox"])
+
+        info_dict: Optional[dict] = None
+        last_error: Optional[Exception] = None
+
+        for idx, browser_name in enumerate(attempts):
+            if cancel_event.is_set():
+                raise InterruptedError("Download was cancelled by the user.")
+
+            # Clean any partial files from previous attempt inside temp_dir
+            for part_f in temp_dir.glob("online_source_*"):
+                try:
+                    part_f.unlink()
+                except Exception:
+                    pass
+
+            opts = dict(base_opts)
+            if browser_name:
+                opts["cookiesfrombrowser"] = (browser_name,)
+                if idx > 0:
+                    status_cb(f"🔐 {platform} requested login — trying {browser_name.title()} cookies...")
+
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info_dict = ydl.extract_info(url.strip(), download=True)
+                if info_dict is not None:
+                    break
+            except InterruptedError:
+                raise
+            except Exception as err:
+                err_str = str(err)
+                if cancel_event.is_set() or "cancelled by the user" in err_str.lower():
+                    raise InterruptedError("Download was cancelled by the user.")
+                if idx == 0:
+                    last_error = err
+                    # Only auto-retry with browser cookies if it looks like an auth/login/cookie issue
+                    lower_err = err_str.lower()
+                    needs_auth = any(
+                        w in lower_err
+                        for w in ("login", "cookie", "sign in", "private", "rate-limit", "403", "forbidden", "instagram", "facebook")
+                    )
+                    if not needs_auth:
+                        break
+                else:
+                    continue
+
+        if info_dict is None:
+            raise RuntimeError(cls.clean_error_message(str(last_error or "Unknown download error"), platform))
+
+        # Locate the downloaded media file inside temp_dir
+        downloaded_files = [
+            p for p in temp_dir.glob("online_source_*")
+            if p.is_file() and not p.name.endswith((".part", ".ytdl", ".json"))
+        ]
+        if not downloaded_files:
+            raise RuntimeError(f"Failed to locate downloaded audio stream from {platform}.")
+
+        temp_media_path = max(downloaded_files, key=lambda p: p.stat().st_size)
+        video_id = str(info_dict.get("id") or "clip")
+        raw_title = str(info_dict.get("title") or "").strip()
+        if not raw_title or raw_title.lower() in ("video", "reel", "post"):
+            raw_title = f"{platform}_{video_id}"
+        sanitized_title = cls.sanitize_title(raw_title, fallback=f"{platform}_{video_id}")
+        duration_sec = float(info_dict.get("duration") or 0.0)
+
+        return OnlineClipInfo(
+            url=url.strip(),
+            platform=platform,
+            title=raw_title,
+            sanitized_title=sanitized_title,
+            video_id=video_id,
+            duration_seconds=duration_sec,
+            temp_media_path=temp_media_path,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Background Transcription Worker & Hygiene Context Manager
 # ---------------------------------------------------------------------------
@@ -1042,6 +1281,177 @@ class TranscriptionEngine:
 
         return str(clean_txt_path), str(timecoded_txt_path), str(md_path), segments_collected
 
+    def run_online_transcription(
+        self,
+        url: str,
+        model_name: str,
+        output_dir: Path,
+        cancel_event: threading.Event,
+        status_cb: Callable[[str], None],
+        progress_cb: Callable[[float], None],
+        segment_cb: Callable[[TranscriptSegment], None],
+        cookie_browser_label: str = DEFAULT_COOKIE_BROWSER,
+        overwrite: Optional[bool] = None,
+        overwrite_prompt_cb: Optional[Callable[[str, Path], Optional[bool]]] = None,
+    ) -> tuple[str, str, str, List[TranscriptSegment], str, str]:
+        """
+        Executes the full online link pipeline with 100% scratch file hygiene:
+        1. Validates disk space.
+        2. Enters TemporaryDirectory context manager.
+        3. Downloads temporary audio stream via yt-dlp directly into TemporaryDirectory.
+        4. Converts audio to 16kHz mono WAV and immediately purges the downloaded stream.
+        5. Transcribes audio with faster-whisper on CPU.
+        6. Purges TemporaryDirectory upon exit under ALL conditions (success, error, cancel).
+        7. Saves output transcripts named after the video's title.
+        """
+        if not check_free_disk_space(output_dir, min_mb=MIN_DISK_SPACE_MB):
+            raise IOError(
+                f"Low disk space: The output drive has less than {MIN_DISK_SPACE_MB} MB free. "
+                "Please free up disk space before proceeding."
+            )
+
+        temp_dir_path: Optional[Path] = None
+        segments_collected: List[TranscriptSegment] = []
+        clip_info: Optional[OnlineClipInfo] = None
+        probed_meta: Optional[MediaMetadata] = None
+
+        with tempfile.TemporaryDirectory(prefix="faery_transcribe_") as temp_dir_str:
+            temp_dir_path = Path(temp_dir_str)
+            scratch_wav = temp_dir_path / "audio_16k_mono.wav"
+
+            # 1. Download temporary audio into temp_dir_path
+            clip_info = OnlineMediaFetcher.download_audio_to_temp(
+                url=url,
+                temp_dir=temp_dir_path,
+                cancel_event=cancel_event,
+                status_cb=status_cb,
+                progress_cb=progress_cb,
+                cookie_browser_label=cookie_browser_label,
+            )
+
+            if cancel_event.is_set():
+                raise InterruptedError("Transcription cancelled.")
+
+            # 2. Convert to 16kHz mono WAV inside temp_dir_path
+            status_cb(f"🎵 Extracting 16kHz mono audio for '{clip_info.sanitized_title}'...")
+            MediaProcessor.extract_16k_mono_wav(clip_info.temp_media_path, scratch_wav, cancel_event)
+
+            # Immediately purge the raw downloaded audio stream
+            try:
+                if clip_info.temp_media_path.exists():
+                    clip_info.temp_media_path.unlink()
+            except Exception:
+                pass
+
+            if cancel_event.is_set():
+                raise InterruptedError("Transcription cancelled.")
+
+            # Probe the converted WAV for exact duration
+            wav_meta = MediaProcessor.probe_file(scratch_wav)
+            eff_duration = wav_meta.duration_seconds if wav_meta.duration_seconds > 0 else clip_info.duration_seconds
+            probed_meta = MediaMetadata(
+                path=Path(f"{clip_info.sanitized_title}.mp4"),
+                file_size_bytes=wav_meta.file_size_bytes,
+                duration_seconds=eff_duration,
+                has_audio=True,
+                format_name=clip_info.platform,
+            )
+
+            # 3. Load Whisper model & transcribe
+            whisper_model = self.get_model(model_name, status_cb)
+
+            if cancel_event.is_set():
+                raise InterruptedError("Transcription cancelled.")
+
+            status_cb(f"🎙️ Transcribing '{clip_info.sanitized_title}'...")
+
+            segments_gen, info = whisper_model.transcribe(
+                str(scratch_wav),
+                language="en",
+                vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=500),
+            )
+
+            total_duration = probed_meta.duration_seconds if probed_meta.duration_seconds > 0 else (info.duration or 1.0)
+
+            for segment in segments_gen:
+                if cancel_event.is_set():
+                    raise InterruptedError("Transcription cancelled.")
+
+                seg_obj = TranscriptSegment(
+                    start=segment.start,
+                    end=segment.end,
+                    text=segment.text.strip(),
+                )
+                segments_collected.append(seg_obj)
+                segment_cb(seg_obj)
+
+                if total_duration > 0:
+                    pct = min(0.99, max(0.01, segment.end / total_duration))
+                    progress_cb(pct)
+                    status_cb(
+                        f"Transcribing: [{seg_obj.formatted_timestamp} / {probed_meta.formatted_duration}] "
+                        f"({int(pct * 100)}%)..."
+                    )
+
+        # Guarantee temp directory is completely removed from disk
+        if temp_dir_path and temp_dir_path.exists():
+            shutil.rmtree(temp_dir_path, ignore_errors=True)
+
+        if cancel_event.is_set() or clip_info is None or probed_meta is None:
+            raise InterruptedError("Transcription cancelled.")
+
+        base_name = clip_info.sanitized_title
+        existing_p = output_dir / f"{base_name}_paragraphs.txt"
+        existing_m = output_dir / f"{base_name}_transcript.md"
+
+        if overwrite is None:
+            if (existing_p.exists() or existing_m.exists()) and overwrite_prompt_cb is not None:
+                ans = overwrite_prompt_cb(base_name, existing_p if existing_p.exists() else existing_m)
+                if ans is None:
+                    raise InterruptedError("Transcription cancelled.")
+                overwrite = ans
+            else:
+                overwrite = False
+
+        paragraphs_text = TranscriptFormatter.to_paragraphs(segments_collected)
+        timecoded_text = TranscriptFormatter.to_timecoded(segments_collected)
+        markdown_text = self._build_markdown(
+            probed_meta,
+            model_name,
+            paragraphs_text,
+            segments_collected,
+            source_url=clip_info.url,
+            platform=clip_info.platform,
+        )
+
+        if overwrite:
+            clean_txt_path = output_dir / f"{base_name}_paragraphs.txt"
+            timecoded_txt_path = output_dir / f"{base_name}_timecoded.txt"
+            md_path = output_dir / f"{base_name}_transcript.md"
+        else:
+            clean_txt_path = self._get_unique_path(output_dir / f"{base_name}_paragraphs.txt")
+            timecoded_txt_path = self._get_unique_path(output_dir / f"{base_name}_timecoded.txt")
+            md_path = self._get_unique_path(output_dir / f"{base_name}_transcript.md")
+
+        with open(clean_txt_path, "w", encoding="utf-8") as f:
+            f.write(paragraphs_text + "\n")
+
+        with open(timecoded_txt_path, "w", encoding="utf-8") as f:
+            f.write(timecoded_text + "\n")
+
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write(markdown_text + "\n")
+
+        return (
+            str(clean_txt_path),
+            str(timecoded_txt_path),
+            str(md_path),
+            segments_collected,
+            base_name,
+            probed_meta.formatted_duration,
+        )
+
     @staticmethod
     def _get_unique_path(target_path: Path) -> Path:
         """Appends a numeric index if target_path already exists."""
@@ -1063,16 +1473,24 @@ class TranscriptionEngine:
         model_name: str,
         paragraphs_text: str,
         segments: List[TranscriptSegment],
+        source_url: Optional[str] = None,
+        platform: Optional[str] = None,
     ) -> str:
         """Constructs a clean, production-grade Markdown document with YouTube timestamps."""
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        title_str = meta.path.stem if source_url else meta.path.name
         lines = [
-            f"# Transcription: {meta.path.name}",
+            f"# Transcription: {title_str}",
             "",
             "### Metadata",
-            f"- **Source File:** `{meta.path.name}`",
+        ]
+        if source_url:
+            lines.append(f"- **Source Link:** {source_url} ({platform or 'Online Clip'})")
+        else:
+            lines.append(f"- **Source File:** `{meta.path.name}`")
+            lines.append(f"- **File Size:** {meta.formatted_size}")
+        lines.extend([
             f"- **Audio Duration:** {meta.formatted_duration}",
-            f"- **File Size:** {meta.formatted_size}",
             f"- **Engine Model:** `{model_name}` (CPU int8)",
             f"- **Generated On:** {now_str}",
             "",
@@ -1084,7 +1502,7 @@ class TranscriptionEngine:
             "---",
             "",
             "## YouTube Chapters & Timestamps",
-        ]
+        ])
         if segments:
             for seg in segments:
                 lines.append(f"- **[{seg.formatted_timestamp}]** {seg.text}")
@@ -1125,6 +1543,7 @@ class FaeryTranscriberApp(ctk.CTk):
         # State tracking
         self.selected_file: Optional[Path] = None
         self.selected_metadata: Optional[MediaMetadata] = None
+        self.selected_url: Optional[str] = None
         self.worker_thread: Optional[threading.Thread] = None
         self.cancel_event = threading.Event()
         self.is_transcribing = False
@@ -1362,7 +1781,7 @@ class FaeryTranscriberApp(ctk.CTk):
         bento_row.grid_columnconfigure(0, weight=5)
         bento_row.grid_columnconfigure(1, weight=6)
 
-        # Left Bento Card: Source Media
+        # Left Bento Card: Source Media (Local Files + Online Social Links)
         file_card = ctk.CTkFrame(
             bento_row,
             corner_radius=16,
@@ -1374,7 +1793,7 @@ class FaeryTranscriberApp(ctk.CTk):
         file_card.grid_columnconfigure(0, weight=1)
 
         file_top_bar = ctk.CTkFrame(file_card, fg_color="transparent")
-        file_top_bar.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 4))
+        file_top_bar.grid(row=0, column=0, sticky="ew", padx=16, pady=(10, 2))
         file_top_bar.grid_columnconfigure(0, weight=1)
 
         source_badge = ctk.CTkLabel(
@@ -1390,35 +1809,72 @@ class FaeryTranscriberApp(ctk.CTk):
 
         self.select_file_btn = ctk.CTkButton(
             file_top_bar,
-            text="Select Video or Audio…",
+            text="📁 Select Local File…",
             font=self.font_body_bold,
             fg_color=FAERY_PURPLE,
             hover_color=FAERY_PURPLE_HOVER,
             text_color=("#FCF4ED", "#FCF4ED"),
-            corner_radius=15,
+            text_color_disabled=("#E8DCF7", "#D4C2EB"),
+            corner_radius=14,
             command=self._on_select_file_clicked,
-            width=168,
-            height=30,
+            width=158,
+            height=28,
         )
         self.select_file_btn.grid(row=0, column=1, sticky="e")
 
         self.file_name_label = ctk.CTkLabel(
             file_card,
-            text="No clip selected yet",
+            text="No clip or link selected yet",
             font=self.font_serif_card,
             text_color=FAERY_TEXT_PRIMARY,
             anchor="w",
         )
-        self.file_name_label.grid(row=1, column=0, sticky="ew", padx=16, pady=(2, 1))
+        self.file_name_label.grid(row=1, column=0, sticky="ew", padx=16, pady=(1, 0))
 
         self.file_meta_label = ctk.CTkLabel(
             file_card,
-            text="Supports Instagram Reels & YouTube videos (.mp4, .mov, .m4a, .mp3, .wav)",
+            text="Select a local file or paste an Instagram, YouTube, TikTok, or Facebook link below",
             font=self.font_small,
             text_color=FAERY_TEXT_MUTED,
             anchor="w",
         )
-        self.file_meta_label.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 12))
+        self.file_meta_label.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 6))
+
+        # Online Link Input Row (Instagram / YouTube / TikTok / Facebook)
+        url_bar_frame = ctk.CTkFrame(file_card, fg_color="transparent")
+        url_bar_frame.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 11))
+        url_bar_frame.grid_columnconfigure(0, weight=1)
+
+        self.url_entry = ctk.CTkEntry(
+            url_bar_frame,
+            placeholder_text="🔗 Paste Instagram, YouTube, TikTok, or Facebook link…",
+            height=28,
+            corner_radius=10,
+            border_width=1,
+            border_color=FAERY_DIVIDER,
+            fg_color=FAERY_LAVENDER_BG,
+            text_color=FAERY_TEXT_PRIMARY,
+            font=self.font_small,
+        )
+        self.url_entry.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        self.url_entry.bind("<KeyRelease>", self._on_url_entry_changed)
+        self.url_entry.bind("<Return>", lambda e: self._on_generate_clicked())
+
+        self.paste_url_btn = ctk.CTkButton(
+            url_bar_frame,
+            text="📋 Paste Link",
+            width=102,
+            height=28,
+            corner_radius=14,
+            fg_color=FAERY_SECONDARY_BTN,
+            hover_color=FAERY_SECONDARY_HOVER,
+            text_color=FAERY_SECONDARY_TEXT,
+            text_color_disabled=FAERY_SECONDARY_DISABLED_TEXT,
+            border_width=0,
+            font=self.font_body_bold,
+            command=self._on_paste_url_clicked,
+        )
+        self.paste_url_btn.grid(row=0, column=1, sticky="e")
 
         # Right Bento Card: Studio Preferences (Apple Settings Group Style)
         settings_card = ctk.CTkFrame(
@@ -1431,7 +1887,7 @@ class FaeryTranscriberApp(ctk.CTk):
         settings_card.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
         settings_card.grid_columnconfigure(1, weight=1)
 
-        # Row 1: Transcription Engine
+        # Row 0: Transcription Engine
         model_label = ctk.CTkLabel(
             settings_card,
             text="  Accuracy Engine" if self.brand.icon_mortar else "🌿 Accuracy Engine",
@@ -1440,15 +1896,15 @@ class FaeryTranscriberApp(ctk.CTk):
             font=self.font_body_bold,
             text_color=FAERY_TEXT_PRIMARY,
         )
-        model_label.grid(row=0, column=0, padx=(16, 12), pady=(13, 8), sticky="w")
+        model_label.grid(row=0, column=0, padx=(16, 12), pady=(10, 6), sticky="w")
 
         self.model_dropdown = ctk.CTkOptionMenu(
             settings_card,
             values=list(MODEL_DISPLAY_NAMES.keys()),
             command=self._on_model_changed,
-            height=28,
-            width=265,
-            corner_radius=14,
+            height=26,
+            width=255,
+            corner_radius=13,
             font=self.font_small,
             fg_color=FAERY_SECONDARY_BTN,
             button_color=FAERY_SECONDARY_HOVER,
@@ -1456,7 +1912,7 @@ class FaeryTranscriberApp(ctk.CTk):
             text_color=FAERY_SECONDARY_TEXT,
         )
         self.model_dropdown.set(self.config.model_selection)
-        self.model_dropdown.grid(row=0, column=1, padx=(0, 16), pady=(13, 8), sticky="e")
+        self.model_dropdown.grid(row=0, column=1, padx=(0, 16), pady=(10, 6), sticky="e")
 
         # 1px Apple Settings Divider
         divider = ctk.CTkFrame(settings_card, height=1, fg_color=FAERY_DIVIDER)
@@ -1471,15 +1927,15 @@ class FaeryTranscriberApp(ctk.CTk):
             font=self.font_body_bold,
             text_color=FAERY_TEXT_PRIMARY,
         )
-        out_label.grid(row=2, column=0, padx=(16, 12), pady=(8, 12), sticky="w")
+        out_label.grid(row=2, column=0, padx=(16, 12), pady=(6, 6), sticky="w")
 
         out_path_subframe = ctk.CTkFrame(settings_card, fg_color="transparent")
-        out_path_subframe.grid(row=2, column=1, padx=(0, 16), pady=(8, 12), sticky="ew")
+        out_path_subframe.grid(row=2, column=1, padx=(0, 16), pady=(6, 6), sticky="ew")
         out_path_subframe.grid_columnconfigure(0, weight=1)
 
         self.out_path_entry = ctk.CTkEntry(
             out_path_subframe,
-            height=28,
+            height=26,
             corner_radius=10,
             border_width=1,
             border_color=FAERY_DIVIDER,
@@ -1493,17 +1949,49 @@ class FaeryTranscriberApp(ctk.CTk):
         self.change_folder_btn = ctk.CTkButton(
             out_path_subframe,
             text="Change…",
-            width=84,
-            height=28,
-            corner_radius=14,
+            width=80,
+            height=26,
+            corner_radius=13,
             fg_color=FAERY_SECONDARY_BTN,
             hover_color=FAERY_SECONDARY_HOVER,
             text_color=FAERY_SECONDARY_TEXT,
+            text_color_disabled=FAERY_SECONDARY_DISABLED_TEXT,
             border_width=0,
             font=self.font_body_bold,
             command=self._on_change_folder_clicked,
         )
         self.change_folder_btn.grid(row=0, column=1, sticky="e")
+
+        # 1px Apple Settings Divider
+        divider2 = ctk.CTkFrame(settings_card, height=1, fg_color=FAERY_DIVIDER)
+        divider2.grid(row=3, column=0, columnspan=2, sticky="ew", padx=16)
+
+        # Row 4: Social Login (Browser Cookies for Instagram/Facebook Reels)
+        cookie_label = ctk.CTkLabel(
+            settings_card,
+            text="  Social Login" if self.brand.icon_butterfly else "🔐 Social Login",
+            image=self.brand.icon_butterfly,
+            compound="left",
+            font=self.font_body_bold,
+            text_color=FAERY_TEXT_PRIMARY,
+        )
+        cookie_label.grid(row=4, column=0, padx=(16, 12), pady=(6, 10), sticky="w")
+
+        self.cookie_dropdown = ctk.CTkOptionMenu(
+            settings_card,
+            values=list(COOKIE_BROWSER_OPTIONS.keys()),
+            command=self._on_cookie_browser_changed,
+            height=26,
+            width=255,
+            corner_radius=13,
+            font=self.font_small,
+            fg_color=FAERY_SECONDARY_BTN,
+            button_color=FAERY_SECONDARY_HOVER,
+            button_hover_color=FAERY_CARD_BORDER,
+            text_color=FAERY_SECONDARY_TEXT,
+        )
+        self.cookie_dropdown.set(self.config.cookie_browser)
+        self.cookie_dropdown.grid(row=4, column=1, padx=(0, 16), pady=(6, 10), sticky="e")
 
         # -------------------------------------------------------------------
         # Row 1: Distraction-Free Document Canvas (Apple Notes / Pages Style)
@@ -1965,6 +2453,9 @@ class FaeryTranscriberApp(ctk.CTk):
     def _on_model_changed(self, choice: str) -> None:
         self.config.model_selection = choice
 
+    def _on_cookie_browser_changed(self, choice: str) -> None:
+        self.config.cookie_browser = choice
+
     def _update_output_dir_label(self) -> None:
         self.out_path_entry.configure(state="normal")
         self.out_path_entry.delete(0, "end")
@@ -1988,6 +2479,67 @@ class FaeryTranscriberApp(ctk.CTk):
                     "Cannot Use Folder",
                     f"The selected folder cannot be written to:\n{err}",
                 )
+
+    def _activate_online_url(self, url: str) -> None:
+        """Sets an online social media URL as the active transcription source."""
+        clean_url = url.strip()
+        self.selected_url = clean_url
+        self.selected_file = None
+        self.selected_metadata = None
+
+        platform = OnlineMediaFetcher.detect_platform(clean_url)
+        short_url = clean_url if len(clean_url) <= 46 else clean_url[:43] + "..."
+        self.file_name_label.configure(text=f"🌐 {platform} Clip Ready")
+        self.file_meta_label.configure(
+            text=f"🔗 {short_url}   |   🧹 Temp audio auto-purged"
+        )
+        mod_key = "⌘Return" if sys.platform == "darwin" else "Ctrl+Enter"
+        self.status_label.configure(
+            text=f"✨ Ready to fetch & transcribe {platform} clip. Click 'Generate Transcript' or press {mod_key}."
+        )
+
+    def _on_url_entry_changed(self, event=None) -> None:
+        """Detects when a valid URL is typed or pasted into the URL box."""
+        raw = self.url_entry.get().strip()
+        if OnlineMediaFetcher.is_valid_url(raw):
+            self._activate_online_url(raw)
+        elif not raw and self.selected_url is not None:
+            self.selected_url = None
+            if not self.selected_file:
+                self.file_name_label.configure(text="No clip or link selected yet")
+                self.file_meta_label.configure(
+                    text="Select a local file or paste an Instagram, YouTube, TikTok, or Facebook link below"
+                )
+                self.status_label.configure(text="✨ Ready — Select a video/audio clip or paste a link to begin.")
+
+    def _on_paste_url_clicked(self) -> None:
+        """Grabs a URL from the system clipboard (or existing entry) and prepares it for transcription."""
+        if self.is_transcribing:
+            return
+
+        clip_text = ""
+        try:
+            clip_text = (self.clipboard_get() or "").strip()
+        except Exception:
+            clip_text = ""
+
+        if OnlineMediaFetcher.is_valid_url(clip_text):
+            self.url_entry.delete(0, "end")
+            self.url_entry.insert(0, clip_text)
+            self._activate_online_url(clip_text)
+            return
+
+        entry_text = self.url_entry.get().strip()
+        if OnlineMediaFetcher.is_valid_url(entry_text):
+            self._activate_online_url(entry_text)
+            return
+
+        messagebox.showinfo(
+            "Paste a Video Link",
+            "Copy any video or reel link from Instagram, YouTube, TikTok, or Facebook "
+            "(starting with https://), then click '📋 Paste Link' or paste it directly into the link box!",
+        )
+        self.url_entry.focus_set()
 
     def _on_select_file_clicked(self) -> None:
         """Opens native file picker filtered to supported video & audio containers."""
@@ -2013,6 +2565,8 @@ class FaeryTranscriberApp(ctk.CTk):
             metadata = MediaProcessor.probe_file(file_path)
             self.selected_file = file_path
             self.selected_metadata = metadata
+            self.selected_url = None
+            self.url_entry.delete(0, "end")
 
             # Remember chosen directory for next time
             self.config.data["last_media_directory"] = str(file_path.parent)
@@ -2035,42 +2589,95 @@ class FaeryTranscriberApp(ctk.CTk):
             messagebox.showerror("File Error", f"Failed to inspect file:\n{err}")
             self.status_label.configure(text="Inspection failed.")
 
+    def _prompt_overwrite_dialog(self, base_stem: str, existing_file: Path) -> Optional[bool]:
+        """Displays a Yes/No/Cancel dialog asking whether to overwrite or create a numbered copy."""
+        return messagebox.askyesnocancel(
+            title="Transcript Already Exists",
+            message=(
+                f"A transcript for '{base_stem}' already exists in your output folder:\n\n"
+                f"• {existing_file.name}\n\n"
+                "Would you like to overwrite the existing transcript files?\n\n"
+                "• Click 'Yes' to OVERWRITE the existing files.\n"
+                f"• Click 'No' to create a new numbered version (e.g. '{base_stem}_1').\n"
+                "• Click 'Cancel' to abort."
+            ),
+        )
+
+    def _threadsafe_prompt_overwrite(self, base_stem: str, existing_file: Path) -> Optional[bool]:
+        """Synchronously dispatches an overwrite dialog onto the main Tkinter thread from a worker thread."""
+        done_evt = threading.Event()
+        result_box: List[Optional[bool]] = [False]
+
+        def _ask_on_main():
+            try:
+                result_box[0] = self._prompt_overwrite_dialog(base_stem, existing_file)
+            finally:
+                done_evt.set()
+
+        self.after(0, _ask_on_main)
+        done_evt.wait()
+        return result_box[0]
+
     def _on_generate_clicked(self) -> None:
         """Validates prerequisites, prompts for overwrite if file exists, and launches worker."""
-        if not self.selected_file or not self.selected_metadata:
-            messagebox.showwarning(
-                "No File Selected",
-                "Please select a video or audio file first before generating a transcript.",
-            )
-            return
-
         if self.is_transcribing:
             return
 
-        output_dir = self.config.output_directory
-        base_stem = self.selected_file.stem
-        existing_p = output_dir / f"{base_stem}_paragraphs.txt"
-        existing_m = output_dir / f"{base_stem}_transcript.md"
+        # Check if a URL was typed/pasted into the entry box
+        typed_url = self.url_entry.get().strip()
+        if typed_url:
+            if OnlineMediaFetcher.is_valid_url(typed_url):
+                self._activate_online_url(typed_url)
+            elif not self.selected_file:
+                messagebox.showwarning(
+                    "Invalid Link",
+                    "The link entered does not look like a valid web address.\n\n"
+                    "Please paste a complete link starting with https:// (from Instagram, YouTube, TikTok, or Facebook).",
+                )
+                return
 
-        overwrite = False
-        if existing_p.exists() or existing_m.exists():
-            ans = messagebox.askyesnocancel(
-                title="Transcript Already Exists",
-                message=(
-                    f"A transcript for '{base_stem}' already exists in your output folder:\n\n"
-                    f"• {existing_p.name if existing_p.exists() else existing_m.name}\n\n"
-                    "Would you like to overwrite the existing transcript files?\n\n"
-                    "• Click 'Yes' to OVERWRITE the existing files.\n"
-                    "• Click 'No' to create a new numbered version (e.g. '{base_stem}_1').\n"
-                    "• Click 'Cancel' to abort."
-                ),
+        has_local = bool(self.selected_file and self.selected_metadata)
+        has_online = bool(self.selected_url)
+
+        if not has_local and not has_online:
+            messagebox.showwarning(
+                "No Clip or Link Selected",
+                "Please select a local video/audio file or paste an Instagram, YouTube, TikTok, or Facebook link first.",
             )
-            if ans is None:
-                return  # Abort
-            overwrite = ans  # True if Yes, False if No
+            return
+
+        output_dir = self.config.output_directory
+        overwrite: Optional[bool] = None
+
+        if has_local and self.selected_file:
+            base_stem = self.selected_file.stem
+            existing_p = output_dir / f"{base_stem}_paragraphs.txt"
+            existing_m = output_dir / f"{base_stem}_transcript.md"
+            if existing_p.exists() or existing_m.exists():
+                ans = self._prompt_overwrite_dialog(base_stem, existing_p if existing_p.exists() else existing_m)
+                if ans is None:
+                    return
+                overwrite = ans
+            else:
+                overwrite = False
+        elif has_online and self.selected_url:
+            # Check if this exact URL was already transcribed in History
+            for rec in self.history.records:
+                if rec.source_filename == self.selected_url:
+                    existing_p = output_dir / f"{rec.title}_paragraphs.txt"
+                    existing_m = output_dir / f"{rec.title}_transcript.md"
+                    if existing_p.exists() or existing_m.exists():
+                        ans = self._prompt_overwrite_dialog(
+                            rec.title, existing_p if existing_p.exists() else existing_m
+                        )
+                        if ans is None:
+                            return
+                        overwrite = ans
+                    break
 
         model_display = self.model_dropdown.get()
         model_id = MODEL_DISPLAY_NAMES.get(model_display, "small.en")
+        cookie_browser_label = self.cookie_dropdown.get()
 
         # Reset states
         self.cancel_event.clear()
@@ -2081,6 +2688,8 @@ class FaeryTranscriberApp(ctk.CTk):
 
         # Update controls
         self.select_file_btn.configure(state="disabled")
+        self.url_entry.configure(state="disabled")
+        self.paste_url_btn.configure(state="disabled")
         self.generate_btn.configure(
             state="disabled",
             text="⏳ Transcribing…",
@@ -2088,6 +2697,7 @@ class FaeryTranscriberApp(ctk.CTk):
             text_color_disabled=("#F0E6FA", "#DDD0F0"),
         )
         self.model_dropdown.configure(state="disabled")
+        self.cookie_dropdown.configure(state="disabled")
         self.change_folder_btn.configure(state="disabled")
         self.cancel_btn.configure(
             state="normal",
@@ -2098,14 +2708,23 @@ class FaeryTranscriberApp(ctk.CTk):
 
         self.progress_bar.configure(mode="indeterminate")
         self.progress_bar.start()
-        self.status_label.configure(text="Starting transcription pipeline...")
 
         # Spawn worker thread (macOS beachball prevention guarantee)
-        self.worker_thread = threading.Thread(
-            target=self._run_transcription_worker,
-            args=(self.selected_file, self.selected_metadata, model_id, output_dir, overwrite),
-            daemon=True,
-        )
+        if has_online and self.selected_url:
+            platform = OnlineMediaFetcher.detect_platform(self.selected_url)
+            self.status_label.configure(text=f"🌐 Connecting to {platform} to fetch temporary audio...")
+            self.worker_thread = threading.Thread(
+                target=self._run_online_transcription_worker,
+                args=(self.selected_url, model_id, output_dir, cookie_browser_label, overwrite),
+                daemon=True,
+            )
+        else:
+            self.status_label.configure(text="Starting transcription pipeline...")
+            self.worker_thread = threading.Thread(
+                target=self._run_transcription_worker,
+                args=(self.selected_file, self.selected_metadata, model_id, output_dir, bool(overwrite)),
+                daemon=True,
+            )
         self.worker_thread.start()
 
     def _run_transcription_worker(
@@ -2116,7 +2735,7 @@ class FaeryTranscriberApp(ctk.CTk):
         output_dir: Path,
         overwrite: bool,
     ) -> None:
-        """Background thread executing extraction and inference."""
+        """Background thread executing local file extraction and inference."""
         start_time = time.time()
         try:
             clean_txt, timecoded_txt, md_path, segments = self.engine.run_transcription(
@@ -2143,6 +2762,53 @@ class FaeryTranscriberApp(ctk.CTk):
                 md_path,
                 media_meta.formatted_duration,
                 elapsed_str,
+                media_file.name,
+            )
+        except InterruptedError:
+            self.after(0, self._on_transcription_cancelled)
+        except Exception as err:
+            self.after(0, self._on_transcription_failed, err)
+
+    def _run_online_transcription_worker(
+        self,
+        url: str,
+        model_id: str,
+        output_dir: Path,
+        cookie_browser_label: str,
+        overwrite: Optional[bool],
+    ) -> None:
+        """Background thread executing temporary online audio download, WAV extraction, and inference."""
+        start_time = time.time()
+        try:
+            clean_txt, timecoded_txt, md_path, segments, clip_title, duration_str = (
+                self.engine.run_online_transcription(
+                    url=url,
+                    model_name=model_id,
+                    output_dir=output_dir,
+                    cancel_event=self.cancel_event,
+                    status_cb=self._async_update_status,
+                    progress_cb=self._async_update_progress,
+                    segment_cb=self._async_append_segment,
+                    cookie_browser_label=cookie_browser_label,
+                    overwrite=overwrite,
+                    overwrite_prompt_cb=self._threadsafe_prompt_overwrite,
+                )
+            )
+            elapsed_sec = int(time.time() - start_time)
+            minutes = elapsed_sec // 60
+            secs = elapsed_sec % 60
+            elapsed_str = f"{minutes}m {secs}s" if minutes > 0 else f"{secs}s"
+
+            self.after(
+                0,
+                self._on_transcription_success,
+                clean_txt,
+                timecoded_txt,
+                md_path,
+                duration_str,
+                elapsed_str,
+                url,
+                clip_title,
             )
         except InterruptedError:
             self.after(0, self._on_transcription_cancelled)
@@ -2182,6 +2848,8 @@ class FaeryTranscriberApp(ctk.CTk):
         md_path: str,
         duration_str: str,
         elapsed_str: str,
+        source_identifier: str = "",
+        online_clip_title: Optional[str] = None,
     ) -> None:
         """Called on main thread when transcription completes successfully."""
         self.last_saved_clean_path = clean_txt_path
@@ -2192,6 +2860,13 @@ class FaeryTranscriberApp(ctk.CTk):
         self.progress_bar.stop()
         self.progress_bar.configure(mode="determinate")
         self.progress_bar.set(1.0)
+
+        if online_clip_title:
+            platform = OnlineMediaFetcher.detect_platform(source_identifier)
+            self.file_name_label.configure(text=f"🌐 {online_clip_title}")
+            self.file_meta_label.configure(
+                text=f"⏱ Duration: {duration_str}   |   🌍 Source: {platform}   |   🧹 Temp audio purged"
+            )
 
         # Re-render active view
         self._render_current_view()
@@ -2205,10 +2880,15 @@ class FaeryTranscriberApp(ctk.CTk):
         # Update History Library
         base_title = Path(clean_txt_path).stem.replace("_paragraphs", "")
         word_count = len(self.textbox.get("1.0", "end-1c").split())
+        eff_source = (
+            source_identifier
+            if source_identifier
+            else (self.selected_file.name if self.selected_file else f"{base_title}.mp4")
+        )
         rec = HistoryRecord(
             id=f"{base_title}_{int(time.time())}",
             title=base_title,
-            source_filename=self.selected_file.name if self.selected_file else f"{base_title}.mp4",
+            source_filename=eff_source,
             duration_str=duration_str,
             created_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
             model=self.model_dropdown.get(),
@@ -2238,9 +2918,12 @@ class FaeryTranscriberApp(ctk.CTk):
         self.status_label.configure(text="Error occurred during transcription.")
 
         err_msg = str(error)
-        if "disk space" in err_msg.lower():
+        lower_msg = err_msg.lower()
+        if "disk space" in lower_msg:
             messagebox.showerror("Low Disk Space", err_msg)
-        elif "download" in err_msg.lower() or "connection" in err_msg.lower():
+        elif "could not download audio from" in lower_msg or "requires you to be logged in" in lower_msg:
+            messagebox.showerror("Online Link Download Error", err_msg)
+        elif "hugging face" in lower_msg or ("download" in lower_msg and "model" in lower_msg):
             messagebox.showerror(
                 "Model Download Error",
                 "Failed to download Whisper model from Hugging Face.\n\n"
@@ -2251,12 +2934,14 @@ class FaeryTranscriberApp(ctk.CTk):
         else:
             messagebox.showerror(
                 "Transcription Error",
-                f"An error occurred while processing the file:\n\n{err_msg}",
+                f"An error occurred while processing the clip:\n\n{err_msg}",
             )
 
     def _reset_controls(self) -> None:
         self.is_transcribing = False
         self.select_file_btn.configure(state="normal")
+        self.url_entry.configure(state="normal")
+        self.paste_url_btn.configure(state="normal")
         self.generate_btn.configure(
             state="normal",
             text="✨ Generate Transcript",
@@ -2264,6 +2949,7 @@ class FaeryTranscriberApp(ctk.CTk):
             text_color=("#FCF4ED", "#FCF4ED"),
         )
         self.model_dropdown.configure(state="normal")
+        self.cookie_dropdown.configure(state="normal")
         self.change_folder_btn.configure(state="normal")
         self.cancel_btn.configure(
             state="disabled",
@@ -2682,9 +3368,14 @@ class FaeryTranscriberApp(ctk.CTk):
         # File Menu
         file_menu = tk.Menu(menu_bar, tearoff=0)
         file_menu.add_command(
-            label="Select Media File...",
+            label="Select Local Media File...",
             accelerator=f"{mod_sym}+O",
             command=self._on_select_file_clicked,
+        )
+        file_menu.add_command(
+            label="Paste Online Video / Reel Link",
+            accelerator=f"{mod_sym}+L",
+            command=self._on_paste_url_clicked,
         )
         file_menu.add_command(
             label="Open Output Folder",
@@ -2788,6 +3479,7 @@ class FaeryTranscriberApp(ctk.CTk):
 
             # Application actions
             self.bind(f"<{mod}-Key-o>", lambda e: self._on_select_file_clicked())
+            self.bind(f"<{mod}-Key-l>", lambda e: self._on_paste_url_clicked())
             self.bind(f"<{mod}-Key-O>", lambda e: self._on_open_folder_clicked())
             self.bind(f"<{mod}-Key-s>", lambda e: self._on_quick_save())
             self.bind(f"<{mod}-Key-Return>", lambda e: self._on_generate_clicked())
@@ -2877,10 +3569,11 @@ class FaeryTranscriberApp(ctk.CTk):
 
         guide_text = (
             "Welcome to your custom Faery Good Transcriber Studio! Crafted specifically for "
-            "Instagram Reels and YouTube videos with zero technical setup required.\n\n"
-            "1. SELECT VIDEO OR AUDIO (⌘O / Ctrl+O)\n"
-            "   Choose any video (.mp4, .mov) or audio (.m4a, .mp3, .wav) file. "
-            "Audio is extracted invisibly in the background with zero leftover scratch files.\n\n"
+            "Instagram Reels, YouTube videos, TikToks, and Facebook clips.\n\n"
+            "1. PICK A LOCAL FILE OR PASTE A SOCIAL LINK\n"
+            "   • Local File (⌘O / Ctrl+O): Choose any video (.mp4, .mov) or audio (.m4a, .mp3, .wav) file.\n"
+            "   • Online Link (⌘L / Ctrl+L): Paste any link from Instagram, YouTube, TikTok, or Facebook "
+            "(or click '📋 Paste Link'). Only the audio stream is fetched into a temporary folder.\n\n"
             "2. GENERATE TRANSCRIPT (⌘Return / Ctrl+Enter)\n"
             "   Click '✨ Generate Transcript'. Watch your words stream in live, and listen for "
             "a gentle chime when your transcript is ready!\n\n"
@@ -2890,9 +3583,9 @@ class FaeryTranscriberApp(ctk.CTk):
             "   • ⏱️ Timecoded: [MM:SS] timestamps ready to paste directly into your "
             "YouTube description for automatic video chapters.\n"
             "   • 📝 Raw Text: Continuous unsegmented text.\n\n"
-            "4. 100% PRIVATE & OFFLINE\n"
-            "   Everything runs locally on your Mac's CPU. No video or audio ever leaves your "
-            "computer, and temporary audio files are purged immediately.\n\n"
+            "4. 100% PRIVATE & ZERO LEFTOVER AUDIO FILES\n"
+            "   All transcription runs locally on your Mac's CPU. Downloaded and converted "
+            "audio files are strictly temporary and purged immediately after transcription.\n\n"
             "5. HISTORY LIBRARY (⌘2 / Ctrl+2)\n"
             "   Every transcript is saved to your output folder. Search, rename, edit, and "
             "export any past transcript in the History tab!"

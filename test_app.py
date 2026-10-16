@@ -283,6 +283,9 @@ class TestGUIComponents(unittest.TestCase):
 
         # Check Transcribe Studio widgets
         self.assertIsNotNone(app.select_file_btn)
+        self.assertIsNotNone(app.url_entry)
+        self.assertIsNotNone(app.paste_url_btn)
+        self.assertIsNotNone(app.cookie_dropdown)
         self.assertIsNotNone(app.generate_btn)
         self.assertIsNotNone(app.model_dropdown)
         self.assertIsNotNone(app.textbox)
@@ -291,6 +294,12 @@ class TestGUIComponents(unittest.TestCase):
         self.assertIsNotNone(app.save_txt_btn)
         self.assertIsNotNone(app.save_md_btn)
         self.assertIsNotNone(app.open_folder_btn)
+
+        # Test URL entry activation
+        app._activate_online_url("https://www.instagram.com/reel/C123456789/")
+        self.assertEqual(app.selected_url, "https://www.instagram.com/reel/C123456789/")
+        self.assertIsNone(app.selected_file)
+        self.assertIn("Instagram", app.file_name_label.cget("text"))
 
         # Check History Tab widgets
         self.assertIsNotNone(app.history_search_entry)
@@ -341,6 +350,96 @@ class TestGUIComponents(unittest.TestCase):
         self.assertIsInstance(TranscriptionEngine.is_model_cached("base.en"), bool)
 
 
+class TestOnlineMediaFetcherAndHygiene(unittest.TestCase):
+    def test_url_validation_and_platform_detection(self):
+        from app import OnlineMediaFetcher
+        self.assertTrue(OnlineMediaFetcher.is_valid_url("https://www.instagram.com/reel/C9xYz123/"))
+        self.assertTrue(OnlineMediaFetcher.is_valid_url("https://youtu.be/dQw4w9WgXcQ"))
+        self.assertTrue(OnlineMediaFetcher.is_valid_url("https://www.tiktok.com/@user/video/123456"))
+        self.assertTrue(OnlineMediaFetcher.is_valid_url("https://fb.watch/abc123xyz/"))
+        self.assertFalse(OnlineMediaFetcher.is_valid_url("not_a_url"))
+        self.assertFalse(OnlineMediaFetcher.is_valid_url("ftp://files.server.com/clip.mp4"))
+
+        self.assertEqual(OnlineMediaFetcher.detect_platform("https://www.instagram.com/reel/abc/"), "Instagram")
+        self.assertEqual(OnlineMediaFetcher.detect_platform("https://www.youtube.com/shorts/abc"), "YouTube")
+        self.assertEqual(OnlineMediaFetcher.detect_platform("https://vm.tiktok.com/ZM123/"), "TikTok")
+        self.assertEqual(OnlineMediaFetcher.detect_platform("https://www.facebook.com/reel/12345"), "Facebook")
+
+    def test_sanitize_title(self):
+        from app import OnlineMediaFetcher
+        clean = OnlineMediaFetcher.sanitize_title("My Magical Apothecary Reel! ✨ #faerygood / 2026: Part 1?", "Instagram_Clip")
+        self.assertNotIn("/", clean)
+        self.assertNotIn(":", clean)
+        self.assertNotIn("?", clean)
+        self.assertTrue(len(clean) > 0)
+
+        fallback = OnlineMediaFetcher.sanitize_title("???", "TikTok_Clip")
+        self.assertEqual(fallback, "TikTok_Clip")
+
+    def test_online_transcription_temp_audio_hygiene(self):
+        """Verifies that online audio downloads are strictly temporary and 100% purged after transcription."""
+        from unittest.mock import patch
+        from app import OnlineMediaFetcher, OnlineClipInfo
+
+        ffmpeg = get_verified_ffmpeg_exe()
+        engine = TranscriptionEngine()
+        cancel_event = threading.Event()
+        captured_temp_files = []
+
+        def fake_download_audio_to_temp(url, temp_dir, cancel_event, status_cb=None, progress_cb=None, cookie_browser_label=""):
+            # Generate a temporary downloaded audio file inside temp_dir (simulating yt-dlp)
+            dl_path = Path(temp_dir) / "online_source_test.m4a"
+            import subprocess
+            subprocess.run(
+                [
+                    ffmpeg, "-y", "-f", "lavfi",
+                    "-i", "sine=frequency=440:duration=2",
+                    "-c:a", "aac", str(dl_path)
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            captured_temp_files.append(dl_path)
+            return OnlineClipInfo(
+                url=url,
+                platform="Instagram",
+                title="Instagram Test Reel",
+                sanitized_title="Instagram_Test_Reel",
+                video_id="test12345",
+                duration_seconds=2.0,
+                temp_media_path=dl_path,
+            )
+
+        with tempfile.TemporaryDirectory() as out_td:
+            output_dir = Path(out_td)
+            with patch.object(OnlineMediaFetcher, "download_audio_to_temp", side_effect=fake_download_audio_to_temp):
+                clean_p, time_p, md_p, segs, base_name, dur_str = engine.run_online_transcription(
+                    url="https://www.instagram.com/reel/test12345/",
+                    model_name="base.en",
+                    output_dir=output_dir,
+                    cancel_event=cancel_event,
+                    cookie_browser_label="Auto / Public (Recommended)",
+                    status_cb=lambda s: None,
+                    progress_cb=lambda p: None,
+                    segment_cb=lambda seg: None,
+                )
+
+                # Verify transcript files were saved
+                self.assertTrue(Path(clean_p).exists())
+                self.assertTrue(Path(time_p).exists())
+                self.assertTrue(Path(md_p).exists())
+                md_content = Path(md_p).read_text(encoding="utf-8")
+                self.assertIn("https://www.instagram.com/reel/test12345/", md_content)
+                self.assertIn("Instagram", md_content)
+
+                # Verify the temporary downloaded audio file AND its scratch directory are completely deleted
+                self.assertEqual(len(captured_temp_files), 1)
+                self.assertFalse(captured_temp_files[0].exists(), "Temporary downloaded audio must be deleted!")
+                self.assertFalse(captured_temp_files[0].parent.exists(), "Temporary directory must be deleted!")
+
+
 if __name__ == "__main__":
     unittest.main()
+
 

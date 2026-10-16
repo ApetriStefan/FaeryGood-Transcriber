@@ -43,7 +43,7 @@ fi
 source .venv/bin/activate
 
 # Check and install requirements if needed
-if ! python -c "import customtkinter, faster_whisper, imageio_ffmpeg, PIL" >/dev/null 2>&1; then
+if ! python -c "import customtkinter, faster_whisper, imageio_ffmpeg, PIL, yt_dlp" >/dev/null 2>&1; then
     echo "📥 Installing required components (one-time setup, takes ~1 min)..."
     pip install --upgrade pip -q
     pip install -r requirements.txt -q || {
@@ -52,6 +52,9 @@ if ! python -c "import customtkinter, faster_whisper, imageio_ffmpeg, PIL" >/dev
         exit 1
     }
     echo "✔ Components installed successfully!"
+else
+    # Keep yt-dlp social extractors fresh silently in the background
+    pip install --upgrade yt-dlp -q >/dev/null 2>&1 || true
 fi
 
 # Launch Application

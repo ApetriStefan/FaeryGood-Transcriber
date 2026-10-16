@@ -147,15 +147,18 @@ If you prefer having a true Mac application that you can drag into `/Application
 
 ---
 
-### 🎬 How to Transcribe a Clip (Creator Workflow)
+### 🎬 How to Transcribe a Clip or Social Link (Creator Workflow)
 
-1. **Select Media:** Click **Select Video or Audio…** (or press `⌘O`). Pick any Instagram Reel, TikTok, YouTube video, or voice memo (`.mp4`, `.mov`, `.m4a`, `.mp3`, `.wav`, `.mkv`).
+1. **Choose Your Source (Local File OR Social Link):**
+   - **Option A — Paste a Social Link:** Copy any **Instagram Reel**, **YouTube video/Short**, **TikTok**, or **Facebook Reel/video** link and click **📋 Paste Link** (or press `⌘L` / `Ctrl+L`). The audio will be fetched automatically into a temporary folder and deleted immediately after transcription!
+     - *Tip for Login-Walled Instagram/Facebook Reels:* If a Reel asks for login, use the **🔐 Social Login** dropdown (`Auto / Public`, `Safari`, `Chrome`, `Firefox`, `Edge`) so it can use your browser session seamlessly.
+   - **Option B — Select a Local File:** Click **Select Video or Audio…** (or press `⌘O`). Pick any video or audio file on your computer (`.mp4`, `.mov`, `.m4a`, `.mp3`, `.wav`, `.mkv`).
 2. **Choose Accuracy Engine:**
    - **High Accuracy (small.en - Recommended):** Best for clear punctuation, accuracy, and longer videos.
    - **Standard (base.en - Fast):** 2x faster, great for quick 30-second reels.
 3. **Generate:** Click **✨ Generate Transcript** (or press `⌘Return`).
-   - The status bar and progress bar stream live.
-   - The Cancel button allows you to stop anytime and immediately wipes any scratch files.
+   - If you pasted a link, the download progress streams live (`0% -> 100%`), converts to temporary 16kHz audio, and immediately deletes the raw download before transcribing.
+   - The Cancel button allows you to stop anytime and immediately wipes any temporary files.
    - A gentle chime rings when done!
 4. **Copy & Share:**
    - Toggle between **📄 Clean Paragraphs** (natural speech pauses for social captions) and **⏱️ Timecoded (YouTube)** (with exact `00:00 - ...` timestamps for video chapters).
@@ -189,6 +192,7 @@ If you prefer having a true Mac application that you can drag into `/Application
 | Action | macOS Shortcut | Windows Shortcut |
 | :--- | :--- | :--- |
 | **Select Media File** | `⌘O` | `Ctrl+O` |
+| **Paste Social Link (IG/YT/TikTok/FB)** | `⌘L` | `Ctrl+L` |
 | **Open Output Folder** | `⇧⌘O` | `Ctrl+Shift+O` |
 | **Generate Transcript** | `⌘Return` | `Ctrl+Enter` |
 | **Quick Save (.txt / Edits)** | `⌘S` | `Ctrl+S` |
