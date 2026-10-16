@@ -608,6 +608,30 @@ class TestFaeryRadio(unittest.TestCase):
             self.assertFalse(controller.is_muted)
             self.assertAlmostEqual(controller.volume, 0.8)
 
+    def test_embedded_art_extraction(self):
+        from app import extract_embedded_art, get_music_dir
+        music_d = get_music_dir()
+        mp3s = list(music_d.glob("*.mp3"))
+        self.assertGreater(len(mp3s), 0)
+        art = extract_embedded_art(mp3s[0], target_size=(44, 44))
+        self.assertIsNotNone(art, f"Should successfully extract embedded art from {mp3s[0].name}")
+
+    def test_timeline_seek_to(self):
+        from app import RadioStationController, ConfigManager, RadioTrackType
+        with tempfile.TemporaryDirectory() as td:
+            cfg = ConfigManager(config_path=Path(td) / "cfg.json")
+            controller = RadioStationController(cfg)
+            song = controller.music_files[0]
+            controller._play_file(song, RadioTrackType.SONG, song.stem, "Faery Good Radio")
+            self.assertTrue(controller.is_playing)
+
+            # Seek to 20 seconds
+            res = controller.seek_to(20.0)
+            self.assertTrue(res)
+            self.assertAlmostEqual(controller.current_seek_offset, 20.0, delta=0.5)
+            self.assertGreaterEqual(controller.get_elapsed_seconds(), 19.5)
+            controller.stop()
+
     def test_gui_radio_toggle_and_visibility(self):
         import customtkinter as ctk
         from app import FaeryTranscriberApp

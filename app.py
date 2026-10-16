@@ -24,6 +24,7 @@ Architectural Highlights:
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import re
@@ -642,6 +643,38 @@ class ConfigManager:
 # ===========================================================================
 # Faery Good Radio (104.9 The Grift FM) - Ambient Music & DJ Engine
 # ===========================================================================
+def extract_embedded_art(audio_path: Optional[Path], target_size: Tuple[int, int] = (44, 44)) -> Optional[ctk.CTkImage]:
+    """Extracts embedded ID3 / APIC album artwork from an audio file and returns a CTkImage."""
+    if not audio_path or not audio_path.exists():
+        return None
+    try:
+        from PIL import Image
+        with open(audio_path, "rb") as f:
+            data = f.read(5 * 1024 * 1024)  # Read up to 5MB to inspect ID3 header
+
+        apic_idx = data.find(b"APIC")
+        sub = data[apic_idx : apic_idx + 2 * 1024 * 1024] if apic_idx != -1 else data[: 2 * 1024 * 1024]
+
+        # Look for JPEG SOI (\xff\xd8\xff) or PNG header (\x89PNG\r\n\x1a\n)
+        jpg_idx = sub.find(b"\xff\xd8\xff")
+        png_idx = sub.find(b"\x89PNG\r\n\x1a\n")
+
+        img_bytes: Optional[bytes] = None
+        if jpg_idx != -1 and (png_idx == -1 or jpg_idx < png_idx):
+            end_idx = sub.find(b"\xff\xd9", jpg_idx)
+            img_bytes = sub[jpg_idx : end_idx + 2] if end_idx != -1 else sub[jpg_idx:]
+        elif png_idx != -1:
+            end_idx = sub.find(b"IEND\xaeB`\x82", png_idx)
+            img_bytes = sub[png_idx : end_idx + 8] if end_idx != -1 else sub[png_idx:]
+
+        if img_bytes:
+            pil_img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+            return ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=target_size)
+    except Exception:
+        pass
+    return None
+
+
 class RadioTrackType:
     SONG = "SONG"
     ANNOUNCER = "ANNOUNCER"
@@ -679,6 +712,7 @@ class RadioStationController:
         self.current_track_subtitle: str = "Faery Good Radio"
         self.current_duration: float = 0.0
         self.current_start_time: float = 0.0
+        self.current_seek_offset: float = 0.0
 
         self.is_playing: bool = False
         self.is_paused: bool = False
@@ -785,19 +819,23 @@ class RadioStationController:
         except Exception:
             return 0.0
 
-    def _play_file(self, path: Path, track_type: str, title: str, subtitle: str) -> bool:
-        """Loads and plays an audio file through pygame.mixer.music."""
+    def _play_file(self, path: Path, track_type: str, title: str, subtitle: str, start_offset: float = 0.0) -> bool:
+        """Loads and plays an audio file through pygame.mixer.music with optional start offset."""
         if not self._ensure_mixer():
             return False
         try:
             import pygame
             pygame.mixer.music.load(str(path))
-            pygame.mixer.music.play()
+            if start_offset > 0.0:
+                pygame.mixer.music.play(start=start_offset)
+            else:
+                pygame.mixer.music.play()
             self.current_track_path = path
             self.current_track_type = track_type
             self.current_track_title = title
             self.current_track_subtitle = subtitle
             self.current_duration = self.get_duration(path)
+            self.current_seek_offset = start_offset
             self.current_start_time = time.time()
             self.is_paused = False
             self.is_playing = True
@@ -805,6 +843,21 @@ class RadioStationController:
         except Exception as err:
             print(f"[Faery Radio] Error playing '{path.name}': {err}", file=sys.stderr)
             return False
+
+    def seek_to(self, target_seconds: float) -> bool:
+        """Jumps to a specific timestamp in the current track (0.0 to current_duration)."""
+        if not self.is_playing or not self.current_track_path:
+            return False
+        if not self._ensure_mixer():
+            return False
+        clamped_pos = max(0.0, min(self.current_duration - 0.2, float(target_seconds)))
+        return self._play_file(
+            self.current_track_path,
+            self.current_track_type,
+            self.current_track_title,
+            self.current_track_subtitle,
+            start_offset=clamped_pos,
+        )
 
     def _pick_next_announcer(self) -> Tuple[Optional[Path], str, str, str]:
         """Selects the next announcer clip.
@@ -1027,7 +1080,7 @@ class RadioStationController:
                     self.next_song()
 
     def get_elapsed_seconds(self) -> float:
-        """Returns current playback position in seconds."""
+        """Returns current playback position in seconds (incorporating seek offset)."""
         if not self.is_playing:
             return 0.0
         if not self._ensure_mixer():
@@ -1036,11 +1089,11 @@ class RadioStationController:
         try:
             pos_ms = pygame.mixer.music.get_pos()
             if pos_ms >= 0:
-                elapsed = pos_ms / 1000.0
+                elapsed = self.current_seek_offset + (pos_ms / 1000.0)
             else:
-                elapsed = time.time() - self.current_start_time
+                elapsed = self.current_seek_offset + (time.time() - self.current_start_time)
         except Exception:
-            elapsed = time.time() - self.current_start_time
+            elapsed = self.current_seek_offset + (time.time() - self.current_start_time)
 
         if self.current_duration > 0:
             return min(self.current_duration, max(0.0, elapsed))
@@ -4212,24 +4265,26 @@ class FaeryTranscriberApp(ctk.CTk):
         self.radio_player_frame.grid_columnconfigure(2, weight=0)
         self.radio_player_frame.grid_rowconfigure(0, weight=1)
 
-        # Left Dock: Vinyl/Radio Icon Badge + Live Title & Station Info
+        # Left Dock: Embedded Track Album Art / Radio Icon Badge + Live Title & Station Info
         left_dock = ctk.CTkFrame(self.radio_player_frame, fg_color="transparent")
         left_dock.grid(row=0, column=0, sticky="w", padx=(14, 10), pady=8)
 
-        badge = ctk.CTkFrame(
+        self.radio_art_badge = ctk.CTkFrame(
             left_dock,
-            width=42,
-            height=42,
-            corner_radius=12,
+            width=44,
+            height=44,
+            corner_radius=10,
             fg_color=FAERY_ROSE_CARD,
             border_width=1,
             border_color=FAERY_CARD_BORDER,
         )
-        badge.pack(side="left", padx=(0, 10))
-        badge.pack_propagate(False)
+        self.radio_art_badge.pack(side="left", padx=(0, 10))
+        self.radio_art_badge.pack_propagate(False)
 
-        badge_lbl = ctk.CTkLabel(badge, text="📻", font=ctk.CTkFont(size=20))
-        badge_lbl.place(relx=0.5, rely=0.5, anchor="center")
+        self.radio_art_lbl = ctk.CTkLabel(self.radio_art_badge, text="📻", font=ctk.CTkFont(size=20))
+        self.radio_art_lbl.place(relx=0.5, rely=0.5, anchor="center")
+        self._current_art_path: Optional[str] = None
+        self._art_image_cache: Dict[str, Optional[ctk.CTkImage]] = {}
 
         info_col = ctk.CTkFrame(left_dock, fg_color="transparent")
         info_col.pack(side="left", fill="y", expand=True)
@@ -4333,15 +4388,19 @@ class FaeryTranscriberApp(ctk.CTk):
         )
         self.radio_time_curr.pack(side="left", padx=(0, 6))
 
+        # Interactive click-to-seek progress timeline bar
         self.radio_progress = ctk.CTkProgressBar(
             timeline_row,
-            height=5,
-            corner_radius=2.5,
+            height=7,
+            corner_radius=3.5,
             fg_color=FAERY_SEGMENT_TRACK,
             progress_color=FAERY_PURPLE,
+            cursor="hand2",
         )
         self.radio_progress.pack(side="left", fill="x", expand=True)
         self.radio_progress.set(0.0)
+        self.radio_progress.bind("<Button-1>", self._on_timeline_clicked)
+        self.radio_progress.bind("<B1-Motion>", self._on_timeline_clicked)
 
         self.radio_time_total = ctk.CTkLabel(
             timeline_row,
@@ -4473,8 +4532,31 @@ class FaeryTranscriberApp(ctk.CTk):
         else:
             self.radio_mute_btn.configure(text="🔊")
 
+    def _on_timeline_clicked(self, event) -> None:
+        """Allows clicking on the progress bar to skip to that specific part of the song."""
+        if not hasattr(self, "radio_controller") or not self.radio_controller.is_playing:
+            return
+        total = self.radio_controller.current_duration
+        if total <= 0.0:
+            return
+
+        try:
+            # Calculate ratio from click X relative to progress bar width
+            width = max(1, self.radio_progress.winfo_width())
+            x_pos = max(0, min(width, event.x))
+            ratio = x_pos / float(width)
+            target_sec = ratio * total
+
+            self.radio_controller.seek_to(target_sec)
+
+            # Instantly update progress bar and time label for immediate tactile feedback
+            self.radio_progress.set(min(1.0, max(0.0, ratio)))
+            self.radio_time_curr.configure(text=format_seconds_mm_ss(target_sec))
+        except Exception as err:
+            print(f"[Faery Radio] Seek error: {err}", file=sys.stderr)
+
     def _radio_tick(self) -> None:
-        """Periodic 250ms tick loop: updates radio progress bar, track labels, and state."""
+        """Periodic 250ms tick loop: updates radio progress bar, track labels, embedded artwork, and state."""
         try:
             if not self.winfo_exists():
                 return
@@ -4488,6 +4570,22 @@ class FaeryTranscriberApp(ctk.CTk):
                 # Update labels
                 self.radio_title_label.configure(text=self.radio_controller.current_track_title)
                 self.radio_artist_label.configure(text=self.radio_controller.current_track_subtitle)
+
+                # Update embedded album art
+                current_p = self.radio_controller.current_track_path
+                curr_key = str(current_p) if current_p else ""
+                if curr_key != self._current_art_path:
+                    self._current_art_path = curr_key
+                    if curr_key:
+                        if curr_key not in self._art_image_cache:
+                            self._art_image_cache[curr_key] = extract_embedded_art(current_p, target_size=(44, 44))
+                        art_img = self._art_image_cache[curr_key]
+                        if art_img:
+                            self.radio_art_lbl.configure(text="", image=art_img)
+                        else:
+                            self.radio_art_lbl.configure(text="📻", image=None)
+                    else:
+                        self.radio_art_lbl.configure(text="📻", image=None)
 
                 # Badge styling
                 t_type = self.radio_controller.current_track_type

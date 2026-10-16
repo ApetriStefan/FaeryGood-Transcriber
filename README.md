@@ -245,7 +245,7 @@ If you want **Faery Good Transcriber** installed in your `/Applications` folder 
 > **Only when you launch the app**, it checks if 7 days have passed since the previous check. If your computer is connected to the internet, it runs a background check to pull any new updates from GitHub (`origin main`). It will never interrupt you with constant checks while you are using the app. You can also manually check anytime via **Help → Check for Updates from GitHub...**.
 
 #### Q: What is 📻 Faery Radio (104.9 The Grift FM)?
-> It's an ambient, built-in music player featuring original tracks (`assets/music`). When you toggle the **`📻 Radio`** switch in the top toolbar (or press `⌘R` / `Ctrl+R`), the player docks gracefully at the bottom of the window with full playback and volume controls. Between songs, you'll hear GTA-style DJ station interludes (with anti-repeat protection), satirical Legal Disclaimers, and pre-song station bumpers! When switched off, it vanishes completely so your workspace stays 100% clean.
+> It's an ambient, built-in music player featuring original tracks (`assets/music`). When you toggle the **`📻 Radio`** switch in the top toolbar (or press `⌘R` / `Ctrl+R`), the player docks gracefully at the bottom of the window with full playback, volume, and **click-to-seek timeline controls**. It displays each track's embedded high-resolution album artwork, and between songs plays GTA-style DJ station interludes (with anti-repeat protection), satirical Legal Disclaimers, and pre-song station bumpers! When switched off, it vanishes completely so your workspace stays 100% clean.
 
 ---
 
@@ -269,7 +269,7 @@ TranscriptionEngine/
 │   └── faery_good_theme.json   # CustomTkinter theme matching FaeryGood.com
 ├── requirements.txt            # Production dependencies (including pygame)
 ├── FaeryTranscriber.spec       # PyInstaller standalone packaging specification
-├── test_app.py                 # Automated unit test suite (23 tests)
+├── test_app.py                 # Automated unit test suite (25 tests)
 ├── Run_Mac.command             # 1-Click double-clickable Mac launcher
 ├── Build_Mac_App.command       # 1-Click standalone .app bundle builder
 ├── Create_Mac_DMG.command      # 1-Click drag-and-drop .dmg installer creator
