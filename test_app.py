@@ -665,6 +665,52 @@ class TestFaeryRadio(unittest.TestCase):
             app.radio_controller.stop()
             app.destroy()
 
+    def test_radio_keyboard_shortcuts(self):
+        from unittest.mock import MagicMock
+        from app import FaeryTranscriberApp
+        app = FaeryTranscriberApp()
+        app.withdraw()
+
+        try:
+            # Test volume adjustment helper
+            app.radio_controller.set_volume(0.5)
+            app._adjust_radio_volume(0.1)
+            self.assertAlmostEqual(app.radio_controller.volume, 0.6, places=2)
+            app._adjust_radio_volume(-0.2)
+            self.assertAlmostEqual(app.radio_controller.volume, 0.4, places=2)
+            app._adjust_radio_volume(1.5)
+            self.assertAlmostEqual(app.radio_controller.volume, 1.0, places=2)
+            app._adjust_radio_volume(-2.0)
+            self.assertAlmostEqual(app.radio_controller.volume, 0.0, places=2)
+
+            # Test spacebar shortcut behavior:
+            # 1. When focus is inside a Text / Entry widget, space should NOT trigger radio toggle
+            mock_entry_focus = MagicMock()
+            mock_entry_focus.winfo_class.return_value = "Entry"
+            app.focus_get = MagicMock(return_value=mock_entry_focus)
+
+            app.radio_toggle.select()
+            app._on_radio_toggle_changed()
+            initial_state = app.radio_controller.is_playing
+
+            # Trigger bound space handler
+            res = app._on_space_pressed_handler(None) if hasattr(app, "_on_space_pressed_handler") else None
+            # If focus is on Entry, it should return None without intercepting
+            self.assertIsNone(res)
+
+            # 2. When focus is on non-text widget (e.g. Frame / Canvas / Root)
+            mock_frame_focus = MagicMock()
+            mock_frame_focus.winfo_class.return_value = "Frame"
+            app.focus_get = MagicMock(return_value=mock_frame_focus)
+
+            # Call space press handler directly
+            if hasattr(app, "_on_space_pressed_handler"):
+                res = app._on_space_pressed_handler(None)
+                self.assertEqual(res, "break")
+        finally:
+            app.radio_controller.stop()
+            app.destroy()
+
 
 if __name__ == "__main__":
     unittest.main()

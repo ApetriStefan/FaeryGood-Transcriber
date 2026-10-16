@@ -222,6 +222,11 @@ If you want **Faery Good Transcriber** installed in your `/Applications` folder 
 | **Switch to Transcribe Studio Tab** | `⌘1` | `Ctrl+1` |
 | **Switch to History Library Tab** | `⌘2` | `Ctrl+2` |
 | **Toggle Ambient Faery Radio** | `⌘R` | `Ctrl+R` |
+| **Play / Pause Radio Playback** | `Space` *(when not in text box)* | `Space` *(when not in text box)* |
+| **Next Radio Track** | `⌘→` / `Media Next` | `Ctrl+→` / `Media Next` |
+| **Previous Radio Track** | `⌘←` / `Media Prev` | `Ctrl+←` / `Media Prev` |
+| **Volume Up / Down** | `⌘↑` / `⌘↓` | `Ctrl+↑` / `Ctrl+↓` |
+| **Mute / Unmute Radio** | `⌘M` | `Ctrl+M` |
 | **Clear History Search** | `Escape` | `Escape` |
 | **Quit Application** | `⌘Q` | `Alt+F4` |
 
@@ -269,7 +274,7 @@ TranscriptionEngine/
 │   └── faery_good_theme.json   # CustomTkinter theme matching FaeryGood.com
 ├── requirements.txt            # Production dependencies (including pygame)
 ├── FaeryTranscriber.spec       # PyInstaller standalone packaging specification
-├── test_app.py                 # Automated unit test suite (25 tests)
+├── test_app.py                 # Automated unit test suite (26 tests)
 ├── Run_Mac.command             # 1-Click double-clickable Mac launcher
 ├── Build_Mac_App.command       # 1-Click standalone .app bundle builder
 ├── Create_Mac_DMG.command      # 1-Click drag-and-drop .dmg installer creator

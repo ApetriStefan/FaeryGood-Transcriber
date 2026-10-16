@@ -4515,6 +4515,13 @@ class FaeryTranscriberApp(ctk.CTk):
         self.radio_controller.set_volume(float(val))
         self._update_radio_mute_icon()
 
+    def _adjust_radio_volume(self, delta: float) -> None:
+        """Adjusts radio volume incrementally (e.g. from arrow key shortcuts)."""
+        new_vol = max(0.0, min(1.0, self.radio_controller.volume + delta))
+        self.radio_controller.set_volume(new_vol)
+        self.radio_volume_slider.set(new_vol)
+        self._update_radio_mute_icon()
+
     def _on_radio_mute_clicked(self) -> None:
         """Toggles mute on/off."""
         self.radio_controller.toggle_mute()
@@ -4712,10 +4719,26 @@ class FaeryTranscriberApp(ctk.CTk):
         )
         view_menu.add_separator()
         view_menu.add_command(
-            label="📻 Faery Radio (104.9 The Grift FM)",
+            label="📻 Toggle Faery Radio",
             accelerator=f"{mod_sym}+R",
             command=self._toggle_radio,
         )
+        view_menu.add_command(
+            label="⏯ Play / Pause Radio",
+            accelerator="Space",
+            command=self._on_radio_play_pause_clicked,
+        )
+        view_menu.add_command(
+            label="⏭ Next Track",
+            accelerator=f"{mod_sym}+Right",
+            command=self._on_radio_next_clicked,
+        )
+        view_menu.add_command(
+            label="⏮ Previous Track",
+            accelerator=f"{mod_sym}+Left",
+            command=self._on_radio_prev_clicked,
+        )
+        view_menu.add_separator()
         view_menu.add_command(
             label="Toggle Dark / Light Theme",
             command=self._cycle_theme,
@@ -4781,6 +4804,41 @@ class FaeryTranscriberApp(ctk.CTk):
             self.bind(f"<{mod}-Key-1>", lambda e: self.tabview.set("🎙️ Transcribe"))
             self.bind(f"<{mod}-Key-2>", lambda e: self.tabview.set("📜 History"))
             self.bind(f"<{mod}-Key-q>", lambda e: self._on_window_close())
+
+            # Media Player Shortcuts (Cmd/Ctrl + Right/Left, Cmd/Ctrl + Up/Down, Cmd/Ctrl + M)
+            self.bind(f"<{mod}-Right>", lambda e: self._on_radio_next_clicked())
+            self.bind(f"<{mod}-Left>", lambda e: self._on_radio_prev_clicked())
+            self.bind(f"<{mod}-Up>", lambda e: self._adjust_radio_volume(0.05))
+            self.bind(f"<{mod}-Down>", lambda e: self._adjust_radio_volume(-0.05))
+            self.bind(f"<{mod}-Key-m>", lambda e: self._on_radio_mute_clicked())
+            self.bind(f"<{mod}-Key-M>", lambda e: self._on_radio_mute_clicked())
+
+        # Global Spacebar playback toggle (when not typing in an entry or text editing widget)
+        def on_space_pressed(event):
+            # Check if user is actively focused in a text or entry widget
+            try:
+                focused = self.focus_get()
+                widget_class = focused.winfo_class() if focused else ""
+                if widget_class in ("Entry", "Text", "TEntry"):
+                    return  # Let normal typing of spaces work
+            except Exception:
+                pass
+
+            if hasattr(self, "radio_controller"):
+                # If radio UI is visible or radio is playing/paused, toggle playback
+                if self.radio_toggle.get() == 1 or self.radio_controller.is_playing:
+                    self._on_radio_play_pause_clicked()
+                    return "break"
+
+        self._on_space_pressed_handler = on_space_pressed
+        self.bind("<space>", on_space_pressed)
+
+        # Standard Media Keys (Play/Pause, Next, Prev, Stop on multimedia keyboards)
+        self.bind("<XF86AudioPlay>", lambda e: self._on_radio_play_pause_clicked())
+        self.bind("<XF86AudioPause>", lambda e: self._on_radio_play_pause_clicked())
+        self.bind("<XF86AudioNext>", lambda e: self._on_radio_next_clicked())
+        self.bind("<XF86AudioPrev>", lambda e: self._on_radio_prev_clicked())
+        self.bind("<XF86AudioStop>", lambda e: self.radio_controller.stop() if hasattr(self, "radio_controller") else None)
 
     def _on_quick_save(self) -> None:
         """Handles Command+S / Ctrl+S intelligently based on the active tab."""
