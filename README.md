@@ -36,6 +36,45 @@ Every screen and control is designed to reflect Ericka's whimsical aesthetic:
 
 ---
 
+## 🧠 How It Works Under the Hood
+
+Faery Good Transcriber is designed to be completely self-contained, idiot-proof, and private:
+
+1. **Audio Extraction & Resampling (Static FFmpeg):**  
+   Whether you select a 4K `.mov` video, an `.mp4` reel, or paste a web link, the bundled static FFmpeg binary extracts the audio and resamples it into a clean **16,000Hz mono 16-bit PCM WAV stream**. This matches the exact acoustic resolution expected by Whisper's neural network.
+2. **On-Device AI Speech Recognition (`faster-whisper`):**  
+   Instead of uploading your voice to an external server or charging per-minute API fees, the app runs OpenAI's Whisper model locally on your computer's CPU (`int8` quantization with 4 parallel worker threads). It translates spoken audio directly into text right inside your machine.
+3. **Smart Pause & Acoustic Pacing Formatter:**  
+   Traditional speech-to-text engines output an overwhelming "wall of text" without natural breaks. Faery Good Transcriber analyzes acoustic pauses in real time: whenever a silence of $\ge 1.0$ second is detected, it automatically inserts a paragraph break. The result reads like natural human writing, matching your real vocal pacing.
+4. **Dual Output (Social Captions & YouTube Chapters):**  
+   Every transcription simultaneously creates:
+   * **`📄 Clean Paragraphs`:** Natural pauses for Instagram captions, TikTok scripts, and newsletters.
+   * **`⏱️ Timecoded`:** Exact timestamps (`[00:15] ...`) formatted for YouTube video description chapters.
+   * **`📝 Markdown`:** A master document with complete metadata and YouTube chapters saved to your output folder.
+5. **100% Scratch Audio Hygiene:**  
+   All temporary audio processing and online downloads occur strictly inside Python's `tempfile.TemporaryDirectory(prefix="faery_transcribe_")`. As soon as transcription completes (or if you click Cancel), all scratch audio is immediately deleted. Zero temporary media files remain on your disk.
+
+---
+
+## 🔐 What is "Social Login" and What Is It For?
+
+Under **Studio Preferences**, you'll see a setting labeled **`Social Login`** with options like `Auto / Public (Recommended)`, `Safari (macOS)`, `Chrome`, `Firefox`, and `Edge`.
+
+### Why is this needed?
+Platforms like **Instagram** and **Facebook** often place Reels and videos behind a "Login Wall"—especially if a reel is from a private account, contains copyrighted background music, or if Instagram detects automated web traffic. When this happens, Instagram blocks public access with an error like *"Login required"* or *"Sign in to confirm you're not a bot"*.
+
+### How does Social Login solve this safely?
+Unlike shady apps or downloaders that ask you to type your personal Instagram username and password into their app (which is dangerous and could compromise your account):
+* **Faery Good Transcriber NEVER asks for your password.**
+* Instead, it uses `yt-dlp`'s secure cookie extraction to borrow the existing session cookies from the web browser you already use on your computer (`Safari` on Mac, `Chrome`, `Firefox`, etc.).
+* Because you are already logged into Instagram in your web browser, the app can fetch the temporary audio stream seamlessly as if you were viewing it yourself!
+
+### Which setting should you use?
+* **`Auto / Public (Recommended)`:** Keep this selected by default! The app will always download public clips anonymously without touching any browser. It will only attempt to read browser cookies if Instagram specifically blocks access with a login wall.
+* **`Safari (macOS)` / `Chrome` / `Firefox`:** If an Instagram Reel fails with a "Login required" message, simply switch this dropdown to the browser where you are logged into Instagram, and click **Generate Transcript** again!
+
+---
+
 ## 🍎 2-Minute Mac Beginner's Guide (Idiot-Proof)
 
 Even if you have never opened the Terminal or written a single line of code in your life, you can run **Faery Good Transcriber** on your Mac in under two minutes.
@@ -123,7 +162,7 @@ If you want **Faery Good Transcriber** installed in your `/Applications` folder 
 ### Workflow 2: Transcribe a Local Video or Voice Memo
 1. Click **`Select Video or Audio…`** (or press `⌘O` / `Ctrl+O`).
 2. Choose any video or audio file on your computer (`.mp4`, `.mov`, `.m4a`, `.mp3`, `.wav`, `.mkv`).
-3. Choose your accuracy model:
+3. Choose your **Transcription Engine**:
    * **`High Accuracy (small.en - Recommended)`:** Best punctuation, vocabulary, and grammar.
    * **`Standard (base.en - Fast)`:** 2x faster, ideal for quick 30-second reels.
 4. Click **`✨ Generate Transcript`** (`⌘Return`).

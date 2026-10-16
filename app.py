@@ -1951,7 +1951,7 @@ class FaeryTranscriberApp(ctk.CTk):
         # Row 0: Transcription Engine
         model_label = ctk.CTkLabel(
             settings_card,
-            text="  Accuracy Engine" if self.brand.icon_mortar else "🌿 Accuracy Engine",
+            text="  Transcription Engine" if self.brand.icon_mortar else "🌿 Transcription Engine",
             image=self.brand.icon_mortar,
             compound="left",
             font=self.font_body_bold,
