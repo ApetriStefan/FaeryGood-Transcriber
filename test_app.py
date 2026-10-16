@@ -253,6 +253,49 @@ class TestHistoryManager(unittest.TestCase):
             self.assertEqual(len(hm2.records), 0)
             self.assertFalse(Path(updated.paragraphs_file).exists())
 
+    def test_history_full_text_search(self):
+        from app import HistoryRecord
+        with tempfile.TemporaryDirectory() as td:
+            temp_path = Path(td)
+            p_file = temp_path / "Apothecary_Magic_paragraphs.txt"
+            p_file.write_text("Today we blend organic lavender oils with chamomile mist.", encoding="utf-8")
+
+            rec = HistoryRecord(
+                id="rec_search",
+                title="Apothecary_Magic",
+                source_filename="Apothecary_Magic.mp4",
+                duration_str="02:15",
+                created_at="2026-10-16 19:00",
+                model="small.en",
+                paragraphs_file=str(p_file),
+                timecoded_file="",
+                markdown_file="",
+                word_count=8,
+            )
+
+            # Match on exact title
+            matched, _ = rec.matches_query("Apothecary")
+            self.assertTrue(matched)
+
+            # Match on title with normalized spaces
+            matched, _ = rec.matches_query("apothecary magic")
+            self.assertTrue(matched)
+
+            # Match on words inside spoken transcript text with snippet extraction
+            matched, snip = rec.matches_query("lavender")
+            self.assertTrue(matched)
+            self.assertIsNotNone(snip)
+            self.assertIn("lavender", snip.lower())
+
+            # Multi-token search matching across metadata and transcript content
+            matched, snip = rec.matches_query("apothecary chamomile")
+            self.assertTrue(matched)
+
+            # Non-matching search
+            matched, _ = rec.matches_query("unrelated non-existent query")
+            self.assertFalse(matched)
+
+
 
 class TestGUIComponents(unittest.TestCase):
     def test_app_lifecycle(self):
@@ -303,11 +346,19 @@ class TestGUIComponents(unittest.TestCase):
 
         # Check History Tab widgets
         self.assertIsNotNone(app.history_search_entry)
+        self.assertIsNotNone(app.history_search_clear_btn)
         self.assertIsNotNone(app.history_refresh_btn)
         self.assertIsNotNone(app.history_textbox)
         self.assertIsNotNone(app.h_rename_btn)
         self.assertIsNotNone(app.h_save_btn)
         self.assertIsNotNone(app.h_delete_btn)
+
+        # Test history search typing and clearing
+        app.history_search_entry.insert(0, "SearchTerm")
+        app._on_history_search_changed()
+        self.assertEqual(app.history_search_entry.get(), "SearchTerm")
+        app._on_clear_search_clicked()
+        self.assertEqual(app.history_search_entry.get(), "")
 
         # Check textbox stats update
         app.textbox.insert("1.0", "Hello world this is a test transcript.")

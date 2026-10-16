@@ -40,7 +40,7 @@ from datetime import datetime
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 # Disable Hugging Face symlink warnings on Windows platforms
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
@@ -615,6 +615,65 @@ class HistoryRecord:
             markdown_file=data.get("markdown_file", ""),
             word_count=data.get("word_count", 0),
         )
+
+    def matches_query(self, query: str) -> Tuple[bool, Optional[str]]:
+        """
+        Performs multi-token search across title, filename, date, model,
+        and full spoken transcript content.
+        Returns (is_match, optional_content_snippet).
+        """
+        clean_q = (query or "").strip()
+        if not clean_q:
+            return True, None
+
+        terms = [t.lower() for t in clean_q.split() if t]
+        if not terms:
+            return True, None
+
+        title_raw = self.title.lower()
+        title_norm = self.title.lower().replace("_", " ").replace("-", " ")
+        source_raw = self.source_filename.lower()
+        source_norm = self.source_filename.lower().replace("_", " ").replace("-", " ")
+        date_str = self.created_at.lower()
+        model_str = self.model.lower()
+
+        # Read transcript text for content search (paragraphs preferred, markdown fallback)
+        content_text = ""
+        for f_path in [self.paragraphs_file, self.markdown_file]:
+            if f_path and os.path.exists(f_path):
+                try:
+                    with open(f_path, "r", encoding="utf-8", errors="ignore") as f:
+                        content_text = f.read()
+                    break
+                except Exception:
+                    pass
+
+        content_lower = content_text.lower()
+        snippet = None
+
+        for term in terms:
+            in_meta = (
+                term in title_raw
+                or term in title_norm
+                or term in source_raw
+                or term in source_norm
+                or term in date_str
+                or term in model_str
+            )
+            in_content = term in content_lower
+            if not (in_meta or in_content):
+                return False, None
+
+            # Extract a contextual snippet if matched in transcript body
+            if in_content and not in_meta and snippet is None:
+                pos = content_lower.find(term)
+                if pos != -1:
+                    start = max(0, pos - 25)
+                    end = min(len(content_text), pos + len(term) + 35)
+                    snip = content_text[start:end].replace("\n", " ").strip()
+                    snippet = f"...{snip}..."
+
+        return True, snippet
 
 
 class HistoryManager:
@@ -1706,6 +1765,8 @@ class FaeryTranscriberApp(ctk.CTk):
                         frame.grid(row=0, column=0, sticky="nsew")
                     else:
                         frame.grid_forget()
+                if "History" in name:
+                    self._app._refresh_history_list(filter_text=None, resync=True)
 
             def get(self) -> str:
                 return self._current
@@ -2228,10 +2289,18 @@ class FaeryTranscriberApp(ctk.CTk):
         left_panel.grid_columnconfigure(0, weight=1)
         left_panel.grid_rowconfigure(2, weight=1)
 
-        # Spotlight-style Rounded Search Input
-        self.history_search_entry = ctk.CTkEntry(
+        # Spotlight-style Rounded Search Input Container with integrated Clear (✕) pill
+        search_box_frame = ctk.CTkFrame(
             left_panel,
-            placeholder_text="🔍 Search transcripts…",
+            fg_color="transparent",
+            height=36,
+        )
+        search_box_frame.grid(row=0, column=0, sticky="ew", padx=14, pady=(14, 8))
+        search_box_frame.grid_columnconfigure(0, weight=1)
+
+        self.history_search_entry = ctk.CTkEntry(
+            search_box_frame,
+            placeholder_text="🔍 Search transcripts & spoken content…",
             height=34,
             corner_radius=17,
             border_width=1,
@@ -2239,8 +2308,29 @@ class FaeryTranscriberApp(ctk.CTk):
             fg_color=FAERY_LAVENDER_BG,
             font=self.font_body,
         )
-        self.history_search_entry.grid(row=0, column=0, sticky="ew", padx=14, pady=(14, 8))
-        self.history_search_entry.bind("<KeyRelease>", lambda e: self._refresh_history_list(self.history_search_entry.get().strip()))
+        self.history_search_entry.grid(row=0, column=0, sticky="ew")
+
+        # Apple-style Clear Button (✕) positioned on the right
+        self.history_search_clear_btn = ctk.CTkButton(
+            search_box_frame,
+            text="✕",
+            width=26,
+            height=26,
+            corner_radius=13,
+            fg_color="transparent",
+            hover_color=FAERY_SEGMENT_HOVER,
+            text_color=FAERY_TEXT_MUTED,
+            border_width=0,
+            font=self.font_small,
+            command=self._on_clear_search_clicked,
+            cursor="hand2",
+        )
+        # Event bindings for real-time keystrokes, return, paste, and escape
+        self.history_search_entry.bind("<KeyRelease>", self._on_history_search_changed)
+        self.history_search_entry.bind("<Return>", self._on_history_search_enter)
+        self.history_search_entry.bind("<KP_Enter>", self._on_history_search_enter)
+        self.history_search_entry.bind("<Escape>", lambda e: self._on_clear_search_clicked())
+        self.history_search_entry.bind("<<Paste>>", lambda e: self.after(20, self._on_history_search_changed))
 
         # Subheader with count & borderless refresh pill
         subhead = ctk.CTkFrame(left_panel, fg_color="transparent")
@@ -2266,7 +2356,7 @@ class FaeryTranscriberApp(ctk.CTk):
             text_color=FAERY_SECONDARY_TEXT,
             border_width=0,
             font=self.font_small,
-            command=lambda: self._refresh_history_list(self.history_search_entry.get().strip()),
+            command=lambda: self._refresh_history_list(filter_text=None, resync=True),
         )
         self.history_refresh_btn.grid(row=0, column=1, sticky="e")
 
@@ -3087,34 +3177,73 @@ class FaeryTranscriberApp(ctk.CTk):
     # -----------------------------------------------------------------------
     # GUI Event Handlers (History Tab & CRUD Operations)
     # -----------------------------------------------------------------------
-    def _refresh_history_list(self, filter_text: str = "") -> None:
-        """Re-scans directory and populates the left-hand scrollable library list."""
-        records = self.history.sync_with_directory(self.config.output_directory)
+    def _on_history_search_changed(self, event=None) -> None:
+        """Handles real-time search typing and toggles the clear pill button."""
+        query = self.history_search_entry.get().strip()
+        if query:
+            self.history_search_clear_btn.grid(row=0, column=1, padx=(6, 0))
+        else:
+            self.history_search_clear_btn.grid_forget()
+        self._refresh_history_list(filter_text=query, resync=False)
+
+    def _on_clear_search_clicked(self) -> None:
+        """Clears the history search box and restores the complete transcript list."""
+        self.history_search_entry.delete(0, "end")
+        self.history_search_clear_btn.grid_forget()
+        self._refresh_history_list(filter_text="", resync=False)
+        self.history_search_entry.focus_set()
+
+    def _on_history_search_enter(self, event=None) -> None:
+        """Selects the first matching transcript when the user presses Enter in search."""
+        query = self.history_search_entry.get().strip()
+        self._on_history_search_changed()
+        records = self.history.records
+        for r in records:
+            matched, _ = r.matches_query(query)
+            if matched:
+                self._select_history_item(r.id)
+                break
+
+    def _refresh_history_list(self, filter_text: Optional[str] = None, resync: bool = False) -> None:
+        """Populates the left-hand scrollable library list using instant smart search."""
+        if resync:
+            records = self.history.sync_with_directory(self.config.output_directory)
+        else:
+            records = self.history.records
+
+        # If filter_text is not explicitly provided, read the current text from the search box
+        if filter_text is None:
+            filter_text = self.history_search_entry.get().strip() if hasattr(self, "history_search_entry") else ""
 
         # Clear existing card widgets
         for widget in self.history_list_frame.winfo_children():
             widget.destroy()
 
-        # Apply search filter
-        query = filter_text.lower().strip()
-        matching = [
-            r for r in records
-            if not query or query in r.title.lower() or query in r.source_filename.lower()
-        ]
+        query = filter_text.strip()
+        matching_results: List[Tuple[HistoryRecord, Optional[str]]] = []
+        for r in records:
+            matched, snippet = r.matches_query(query)
+            if matched:
+                matching_results.append((r, snippet))
 
-        self.history_count_label.configure(text=f"{len(matching)} Transcripts")
+        total_count = len(records)
+        match_count = len(matching_results)
+        if query:
+            self.history_count_label.configure(text=f"{match_count} of {total_count} Transcripts")
+        else:
+            self.history_count_label.configure(text=f"{total_count} Transcripts")
 
-        if not matching:
+        if not matching_results:
             empty_lbl = ctk.CTkLabel(
                 self.history_list_frame,
-                text="No saved transcripts found." if not query else "No matching transcripts.",
+                text="No saved transcripts found." if not query else f"No transcripts matching '{query}'.",
                 font=self.font_body,
                 text_color=FAERY_TEXT_MUTED,
             )
             empty_lbl.pack(pady=30)
             return
 
-        for record in matching:
+        for record, snippet in matching_results:
             is_selected = (record.id == self.selected_history_id)
             card = ctk.CTkFrame(
                 self.history_list_frame,
@@ -3135,6 +3264,19 @@ class FaeryTranscriberApp(ctk.CTk):
                 anchor="w",
             )
             title_lbl.pack(fill="x", padx=12, pady=(8, 2))
+
+            # If matched inside spoken transcript content, show the matching speech snippet!
+            snippet_lbl = None
+            if snippet:
+                snippet_lbl = ctk.CTkLabel(
+                    card,
+                    text=f"💬 {snippet}",
+                    font=self.font_small,
+                    text_color=FAERY_PURPLE[0],
+                    anchor="w",
+                    justify="left",
+                )
+                snippet_lbl.pack(fill="x", padx=12, pady=(0, 2))
 
             # Subtitle (Date & Duration)
             meta_str = f"📅 {record.created_at}   •   ⏱ {record.duration_str}"
@@ -3159,7 +3301,10 @@ class FaeryTranscriberApp(ctk.CTk):
             w_lbl.pack(fill="x", padx=12, pady=(0, 8))
 
             # Bind clicks
-            for elem in [card, title_lbl, meta_lbl, w_lbl]:
+            elements = [card, title_lbl, meta_lbl, w_lbl]
+            if snippet_lbl is not None:
+                elements.append(snippet_lbl)
+            for elem in elements:
                 elem.bind("<Button-1>", lambda e, r_id=record.id: self._select_history_item(r_id))
 
     def _select_history_item(self, record_id: str) -> None:
@@ -3169,8 +3314,8 @@ class FaeryTranscriberApp(ctk.CTk):
         if not record:
             return
 
-        # Re-render list highlighting
-        self._refresh_history_list(self.history_search_entry.get().strip())
+        # Re-render list highlighting preserving active search
+        self._refresh_history_list(filter_text=None, resync=False)
 
         # Update details header
         self.history_title_label.configure(text=record.title)
@@ -3233,7 +3378,7 @@ class FaeryTranscriberApp(ctk.CTk):
                 updated = self.history.rename_record(self.selected_history_id, new_title.strip())
                 if updated:
                     self.history_title_label.configure(text=updated.title)
-                    self._refresh_history_list(self.history_search_entry.get().strip())
+                    self._refresh_history_list(filter_text=None, resync=False)
                     self._load_history_preview(updated)
             except Exception as err:
                 messagebox.showerror("Rename Error", f"Could not rename files:\n{err}")
@@ -3266,7 +3411,7 @@ class FaeryTranscriberApp(ctk.CTk):
                 f.write(content)
             record.word_count = len(content.split())
             self.history.save()
-            self._refresh_history_list(self.history_search_entry.get().strip())
+            self._refresh_history_list(filter_text=None, resync=False)
             self.h_save_btn.configure(text="✓ Saved!", fg_color=FAERY_SAGE_GREEN, text_color="#FCF4ED")
             self.after(
                 2000,
@@ -3341,7 +3486,7 @@ class FaeryTranscriberApp(ctk.CTk):
             self.h_open_file_btn.configure(state="disabled")
             self.h_delete_btn.configure(state="disabled")
 
-            self._refresh_history_list(self.history_search_entry.get().strip())
+            self._refresh_history_list(filter_text=None, resync=False)
 
     def _on_window_close(self) -> None:
         """Handles graceful application shutdown, guaranteeing scratch purge."""
