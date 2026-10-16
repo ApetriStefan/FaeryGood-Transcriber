@@ -517,7 +517,133 @@ class TestAutoUpdater(unittest.TestCase):
         self.assertIsInstance(res, bool)
 
 
+class TestFaeryRadio(unittest.TestCase):
+    def test_radio_asset_discovery(self):
+        from app import RadioStationController, ConfigManager
+        with tempfile.TemporaryDirectory() as td:
+            cfg = ConfigManager(config_path=Path(td) / "cfg.json")
+            controller = RadioStationController(cfg)
+
+            self.assertGreater(len(controller.music_files), 0, "Should discover music files")
+            self.assertIsNotNone(controller.liability_file, "Should discover Liability.mp3")
+            self.assertEqual(controller.liability_file.name, "Liability.mp3")
+            self.assertIsNotNone(controller.grift_file, "Should discover Grift.mp3")
+            self.assertEqual(controller.grift_file.name, "Grift.mp3")
+            self.assertGreater(len(controller.regular_announcers), 0, "Should discover regular announcer clips")
+
+    def test_announcer_selection_and_anti_repeat(self):
+        from app import RadioStationController, ConfigManager, RadioTrackType
+        with tempfile.TemporaryDirectory() as td:
+            cfg = ConfigManager(config_path=Path(td) / "cfg.json")
+            controller = RadioStationController(cfg)
+
+            last_clip_name = None
+            liability_count = 0
+            trials = 100
+
+            for _ in range(trials):
+                clip_path, track_type, title, sub = controller._pick_next_announcer()
+                self.assertIsNotNone(clip_path)
+
+                # Anti-repeat check: No clip should repeat immediately back-to-back
+                self.assertNotEqual(
+                    clip_path.name,
+                    last_clip_name,
+                    f"Clip '{clip_path.name}' repeated immediately back-to-back!",
+                )
+                last_clip_name = clip_path.name
+
+                if track_type == RadioTrackType.LIABILITY:
+                    liability_count += 1
+                    self.assertEqual(clip_path, controller.liability_file)
+
+            # Liability should trigger with higher chance (~20-40% of breaks)
+            self.assertGreater(liability_count, 10, "Liability should trigger regularly with higher chance")
+
+    def test_pre_song_grift_bumper_logic(self):
+        from app import RadioStationController, ConfigManager, RadioTrackType
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as td:
+            cfg = ConfigManager(config_path=Path(td) / "cfg.json")
+            controller = RadioStationController(cfg)
+            song = controller.music_files[0]
+
+            with patch.object(controller, "_play_file", return_value=True) as mock_play:
+                # Force Grift bumper roll (< RATE)
+                with patch("random.random", return_value=0.1):
+                    controller._prepare_and_play_song(song)
+                    mock_play.assert_called_once()
+                    args = mock_play.call_args[0]
+                    self.assertEqual(args[0], controller.grift_file)
+                    self.assertEqual(args[1], RadioTrackType.GRIFT)
+                    self.assertIsNotNone(controller._pending_song)
+                    self.assertEqual(controller._pending_song[0], song)
+
+            with patch.object(controller, "_play_file", return_value=True) as mock_play:
+                # Force regular song roll (>= RATE)
+                with patch("random.random", return_value=0.9):
+                    controller._prepare_and_play_song(song)
+                    mock_play.assert_called_once()
+                    args = mock_play.call_args[0]
+                    self.assertEqual(args[0], song)
+                    self.assertEqual(args[1], RadioTrackType.SONG)
+                    self.assertIsNone(controller._pending_song)
+
+    def test_volume_and_mute_controls(self):
+        from app import RadioStationController, ConfigManager
+        with tempfile.TemporaryDirectory() as td:
+            cfg = ConfigManager(config_path=Path(td) / "cfg.json")
+            controller = RadioStationController(cfg)
+
+            controller.set_volume(0.8)
+            self.assertAlmostEqual(controller.volume, 0.8)
+            self.assertAlmostEqual(cfg.radio_volume, 0.8)
+
+            # Test Mute
+            controller.toggle_mute()
+            self.assertTrue(controller.is_muted)
+
+            # Test Unmute
+            controller.toggle_mute()
+            self.assertFalse(controller.is_muted)
+            self.assertAlmostEqual(controller.volume, 0.8)
+
+    def test_gui_radio_toggle_and_visibility(self):
+        import customtkinter as ctk
+        from app import FaeryTranscriberApp
+        app = FaeryTranscriberApp()
+        app.withdraw()
+
+        try:
+            # 1. Radio toggle switch must exist and be named Radio
+            self.assertIsNotNone(app.radio_toggle)
+            self.assertIn("Radio", app.radio_toggle.cget("text"))
+
+            # 2. Player frame must exist
+            self.assertIsNotNone(app.radio_player_frame)
+
+            # 3. If toggle is OFF, player must be hidden
+            app.radio_toggle.deselect()
+            app._on_radio_toggle_changed()
+            self.assertEqual(len(app.radio_player_frame.grid_info()), 0, "Player must be hidden when toggle is off")
+
+            # 4. If toggle is ON, player must be displayed in row 2
+            app.radio_toggle.select()
+            app._on_radio_toggle_changed()
+            info = app.radio_player_frame.grid_info()
+            self.assertEqual(info.get("row"), 2, "Player must be displayed at row 2 when toggle is on")
+
+            # 5. Dismiss button turns off toggle and hides player
+            app._close_radio_player()
+            self.assertEqual(app.radio_toggle.get(), 0)
+            self.assertEqual(len(app.radio_player_frame.grid_info()), 0)
+        finally:
+            app.radio_controller.stop()
+            app.destroy()
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 

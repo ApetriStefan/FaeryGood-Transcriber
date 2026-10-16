@@ -20,7 +20,7 @@ if os.path.isdir("assets"):
     datas.append(("assets", "assets"))
 
 # Collect all dynamic assets and binaries for critical packages
-for pkg in ["customtkinter", "imageio_ffmpeg", "ctranslate2", "faster_whisper", "PIL", "yt_dlp"]:
+for pkg in ["customtkinter", "imageio_ffmpeg", "ctranslate2", "faster_whisper", "PIL", "yt_dlp", "pygame"]:
     pkg_datas, pkg_binaries, pkg_hiddenimports = collect_all(pkg)
     datas += pkg_datas
     binaries += pkg_binaries

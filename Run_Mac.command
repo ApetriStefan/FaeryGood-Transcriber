@@ -43,7 +43,7 @@ fi
 source .venv/bin/activate
 
 # Check and install requirements if needed
-if ! python -c "import customtkinter, faster_whisper, imageio_ffmpeg, PIL, yt_dlp" >/dev/null 2>&1; then
+if ! python -c "import customtkinter, faster_whisper, imageio_ffmpeg, PIL, yt_dlp, pygame" >/dev/null 2>&1; then
     echo "📥 Installing required components (one-time setup, takes ~1 min)..."
     pip install --upgrade pip -q
     pip install -r requirements.txt -q || {

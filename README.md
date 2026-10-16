@@ -20,6 +20,7 @@ A delightful, 100% private, on-device desktop transcription studio and historica
   * **Speech Snippet Previews:** Results highlight the exact sentence from the transcript where the spoken words were detected (e.g. `💬 "...save for the muffled rhythm of rain..."`).
   * Spotlight-style search bar with real-time filtering and an instant `✕` clear pill button.
 * **Automatic Weekly Updates (Only on Launch):** When the application is launched, it checks whether 7 days have elapsed since the last check. If an internet connection is available, it automatically pulls updates from the GitHub repository (`main` branch) in the background. You can also trigger an immediate check at any time from **Help → Check for Updates from GitHub...**.
+* **📻 Ambient Faery Radio (104.9 The Grift FM):** Toggle on the radio switch (`⌘R` / `Ctrl+R`) to summon a retro-modern ambient music player docked at the bottom of the screen. Plays original apothecary tracks with GTA-style station DJ breaks, high-probability satirical legal disclaimers, and pre-song station bumpers. Completely disappears when toggled off to preserve 100% of your workspace.
 * **Overwrite Protection:** If you transcribe the same clip a second time, the studio will ask whether you want to overwrite the old file or create a numbered duplicate (`_1`).
 * **Bespoke Faery Good Aesthetics:** Custom-tailored to [FaeryGood.com](https://faerygood.com/) with watercolor fairy icons, whimsical butterfly accents, soft lavender backgrounds, and apothecary cream cards.
 
@@ -220,6 +221,7 @@ If you want **Faery Good Transcriber** installed in your `/Applications` folder 
 | **Copy Active Transcript** | `⌘C` | `Ctrl+C` |
 | **Switch to Transcribe Studio Tab** | `⌘1` | `Ctrl+1` |
 | **Switch to History Library Tab** | `⌘2` | `Ctrl+2` |
+| **Toggle Ambient Faery Radio** | `⌘R` | `Ctrl+R` |
 | **Clear History Search** | `Escape` | `Escape` |
 | **Quit Application** | `⌘Q` | `Alt+F4` |
 
@@ -242,6 +244,9 @@ If you want **Faery Good Transcriber** installed in your `/Applications` folder 
 #### Q: How do automatic updates work?
 > **Only when you launch the app**, it checks if 7 days have passed since the previous check. If your computer is connected to the internet, it runs a background check to pull any new updates from GitHub (`origin main`). It will never interrupt you with constant checks while you are using the app. You can also manually check anytime via **Help → Check for Updates from GitHub...**.
 
+#### Q: What is 📻 Faery Radio (104.9 The Grift FM)?
+> It's an ambient, built-in music player featuring original tracks (`assets/music`). When you toggle the **`📻 Radio`** switch in the top toolbar (or press `⌘R` / `Ctrl+R`), the player docks gracefully at the bottom of the window with full playback and volume controls. Between songs, you'll hear GTA-style DJ station interludes (with anti-repeat protection), satirical Legal Disclaimers, and pre-song station bumpers! When switched off, it vanishes completely so your workspace stays 100% clean.
+
 ---
 
 ## 📦 Project File Map
@@ -250,6 +255,8 @@ If you want **Faery Good Transcriber** installed in your `/Applications` folder 
 TranscriptionEngine/
 ├── app.py                      # Complete standalone application code & GUI
 ├── assets/                     # Official Faery Good icons, logos, artwork & theme
+│   ├── music/                  # Original ambient tracks (9 songs)
+│   ├── announcer/              # GTA-style DJ station clips, disclaimers & bumpers
 │   ├── faery_icon.icns         # macOS native application & DMG icon
 │   ├── faery_icon.ico          # Windows native multi-size application icon
 │   ├── faery_icon.png          # High-res 1024x1024 squircle app icon
@@ -260,9 +267,9 @@ TranscriptionEngine/
 │   ├── faery_mortar_*.png      # Apothecary mortar & pestle section icon
 │   ├── faery_sprig_*.png       # Botanical herbal sprig section icon
 │   └── faery_good_theme.json   # CustomTkinter theme matching FaeryGood.com
-├── requirements.txt            # Production dependencies
+├── requirements.txt            # Production dependencies (including pygame)
 ├── FaeryTranscriber.spec       # PyInstaller standalone packaging specification
-├── test_app.py                 # Automated unit test suite (18 tests)
+├── test_app.py                 # Automated unit test suite (23 tests)
 ├── Run_Mac.command             # 1-Click double-clickable Mac launcher
 ├── Build_Mac_App.command       # 1-Click standalone .app bundle builder
 ├── Create_Mac_DMG.command      # 1-Click drag-and-drop .dmg installer creator

@@ -35,15 +35,19 @@ import threading
 import time
 import urllib.parse
 import webbrowser
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+import random
 import tkinter as tk
 from tkinter import filedialog, messagebox
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 # Disable Hugging Face symlink warnings on Windows platforms
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+# Suppress pygame community banner
+os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 
 # Windows High-DPI awareness initialization
 if sys.platform == "win32":
@@ -127,6 +131,24 @@ def get_assets_dir() -> Path:
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         return Path(sys._MEIPASS) / "assets"
     return Path(__file__).resolve().parent / "assets"
+
+
+def get_music_dir() -> Path:
+    """Finds the directory containing music tracks (checks assets/music and assets/Audio/music)."""
+    assets = get_assets_dir()
+    for candidate in [assets / "music", assets / "Audio" / "music", assets / "audio" / "music"]:
+        if candidate.exists() and candidate.is_dir():
+            return candidate
+    return assets / "music"
+
+
+def get_announcer_dir() -> Path:
+    """Finds the directory containing DJ announcer clips (checks assets/announcer and assets/Audio/announcer)."""
+    assets = get_assets_dir()
+    for candidate in [assets / "announcer", assets / "Audio" / "announcer", assets / "audio" / "announcer"]:
+        if candidate.exists() and candidate.is_dir():
+            return candidate
+    return assets / "announcer"
 
 
 def apply_faery_good_theme() -> None:
@@ -267,6 +289,17 @@ class TranscriptSegment:
         if hours > 0:
             return f"{hours:02d}:{minutes:02d}:{secs:02d}"
         return f"{minutes:02d}:{secs:02d}"
+
+
+def format_seconds_mm_ss(seconds: float) -> str:
+    """Formats duration in seconds as MM:SS (or HH:MM:SS if >= 1 hour)."""
+    total = max(0, int(seconds))
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+    secs = total % 60
+    if hours > 0:
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
 
 
 class TranscriptFormatter:
@@ -492,6 +525,8 @@ class ConfigManager:
             "last_media_directory": "",
             "cookie_browser": DEFAULT_COOKIE_BROWSER,
             "last_update_check": 0.0,
+            "radio_enabled": False,
+            "radio_volume": 0.7,
         }
         self.load()
 
@@ -571,6 +606,27 @@ class ConfigManager:
         self.data["last_update_check"] = float(ts)
         self.save()
 
+    @property
+    def radio_enabled(self) -> bool:
+        return bool(self.data.get("radio_enabled", False))
+
+    @radio_enabled.setter
+    def radio_enabled(self, val: bool) -> None:
+        self.data["radio_enabled"] = bool(val)
+        self.save()
+
+    @property
+    def radio_volume(self) -> float:
+        try:
+            return max(0.0, min(1.0, float(self.data.get("radio_volume", 0.7))))
+        except Exception:
+            return 0.7
+
+    @radio_volume.setter
+    def radio_volume(self, val: float) -> None:
+        self.data["radio_volume"] = max(0.0, min(1.0, float(val)))
+        self.save()
+
     def get_initial_media_dir(self) -> Path:
         """Returns the user's previously browsed media directory or a smart OS default."""
         last_dir = self.data.get("last_media_directory")
@@ -581,6 +637,421 @@ class ConfigManager:
             if candidate.exists():
                 return candidate
         return home
+
+
+# ===========================================================================
+# Faery Good Radio (104.9 The Grift FM) - Ambient Music & DJ Engine
+# ===========================================================================
+class RadioTrackType:
+    SONG = "SONG"
+    ANNOUNCER = "ANNOUNCER"
+    LIABILITY = "LIABILITY"
+    GRIFT = "GRIFT"
+
+
+class RadioStationController:
+    """Manages audio playback and GTA-style radio scheduling for 104.9 The Grift FM.
+
+    Rules:
+    - Songs play in rotation from assets/music (or assets/Audio/music).
+    - Between each song, an announcer message plays (preventing recent repeats, GTA style).
+    - With a higher chance (35%), the Liability disclaimer plays instead of a standard announcer message.
+    - With the same rate (35%), right before a song starts, the Grift message ("You're on the grift.") plays.
+    """
+
+    RATE: float = 0.35  # 35% higher chance for Liability & pre-song Grift bumper
+
+    def __init__(self, config: ConfigManager, assets_dir: Optional[Path] = None):
+        self.config = config
+        self.assets_dir = assets_dir or get_assets_dir()
+
+        self.music_files: List[Path] = []
+        self.liability_file: Optional[Path] = None
+        self.grift_file: Optional[Path] = None
+        self.regular_announcers: List[Path] = []
+
+        self.songs_playlist: List[Path] = []
+        self.current_song_idx: int = -1
+
+        self.current_track_path: Optional[Path] = None
+        self.current_track_type: str = RadioTrackType.SONG
+        self.current_track_title: str = "104.9 The Grift FM"
+        self.current_track_subtitle: str = "Faery Good Radio"
+        self.current_duration: float = 0.0
+        self.current_start_time: float = 0.0
+
+        self.is_playing: bool = False
+        self.is_paused: bool = False
+        self.is_muted: bool = False
+        self._prev_unmuted_volume: float = self.config.radio_volume or 0.7
+        self.volume: float = self._prev_unmuted_volume
+
+        self.recent_announcers: deque[str] = deque(maxlen=4)
+        self.last_was_liability: bool = False
+        self._pending_song: Optional[Tuple[Path, str, str]] = None
+        self._duration_cache: Dict[str, float] = {}
+        self._mixer_initialized: bool = False
+
+        self.rescan_audio_assets()
+
+    def rescan_audio_assets(self) -> None:
+        """Discovers music, announcer, Liability, and Grift audio tracks from assets."""
+        music_d = get_music_dir()
+        announcer_d = get_announcer_dir()
+
+        # 1. Music files
+        if music_d.exists() and music_d.is_dir():
+            self.music_files = sorted(
+                [p for p in music_d.glob("*") if p.suffix.lower() in [".mp3", ".wav", ".m4a", ".ogg"]],
+                key=lambda p: p.name.lower(),
+            )
+        else:
+            self.music_files = []
+
+        # 2. Announcers, Liability & Grift files
+        all_announcers: List[Path] = []
+        if announcer_d.exists() and announcer_d.is_dir():
+            all_announcers = sorted(
+                [p for p in announcer_d.glob("*") if p.suffix.lower() in [".mp3", ".wav", ".m4a", ".ogg"]],
+                key=lambda p: p.name.lower(),
+            )
+
+        self.liability_file = None
+        self.grift_file = None
+        numbered_announcers: List[Path] = []
+        other_announcers: List[Path] = []
+
+        for p in all_announcers:
+            stem_low = p.stem.lower()
+            if "liability" in stem_low:
+                self.liability_file = p
+            elif "grift" in stem_low:
+                self.grift_file = p
+            elif re.search(r"announcer\s*\d+", stem_low):
+                numbered_announcers.append(p)
+            elif stem_low != "announcer":  # Exclude uncut 2-minute master compilation if numbered exist
+                other_announcers.append(p)
+
+        if numbered_announcers:
+            self.regular_announcers = numbered_announcers + other_announcers
+        elif other_announcers:
+            self.regular_announcers = other_announcers
+        else:
+            # Fallback to any remaining clips if numbered ones aren't present
+            self.regular_announcers = [p for p in all_announcers if p not in (self.liability_file, self.grift_file)]
+
+        self._reshuffle_songs()
+
+    def _ensure_mixer(self) -> bool:
+        """Initializes pygame.mixer safely on demand."""
+        if self._mixer_initialized:
+            return True
+        try:
+            import pygame
+            if not pygame.mixer.get_init():
+                pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+            pygame.mixer.music.set_volume(0.0 if self.is_muted else self.volume)
+            self._mixer_initialized = True
+            return True
+        except Exception as err:
+            print(f"[Faery Radio] Audio mixer init error: {err}", file=sys.stderr)
+            return False
+
+    def _reshuffle_songs(self) -> None:
+        """Creates a fresh randomized playlist without repeating the last played song back-to-back."""
+        if not self.music_files:
+            self.songs_playlist = []
+            self.current_song_idx = -1
+            return
+        songs = list(self.music_files)
+        random.shuffle(songs)
+        if len(songs) > 1 and self.current_track_path and songs[0] == self.current_track_path:
+            songs[0], songs[-1] = songs[-1], songs[0]
+        self.songs_playlist = songs
+        self.current_song_idx = 0
+
+    def get_duration(self, path: Optional[Path]) -> float:
+        """Returns track duration in seconds with memory caching."""
+        if not path or not path.exists():
+            return 0.0
+        s_path = str(path)
+        if s_path in self._duration_cache:
+            return self._duration_cache[s_path]
+        try:
+            meta = MediaProcessor.probe_file(path)
+            dur = meta.duration_seconds if meta.duration_seconds > 0 else 0.0
+            self._duration_cache[s_path] = dur
+            return dur
+        except Exception:
+            return 0.0
+
+    def _play_file(self, path: Path, track_type: str, title: str, subtitle: str) -> bool:
+        """Loads and plays an audio file through pygame.mixer.music."""
+        if not self._ensure_mixer():
+            return False
+        try:
+            import pygame
+            pygame.mixer.music.load(str(path))
+            pygame.mixer.music.play()
+            self.current_track_path = path
+            self.current_track_type = track_type
+            self.current_track_title = title
+            self.current_track_subtitle = subtitle
+            self.current_duration = self.get_duration(path)
+            self.current_start_time = time.time()
+            self.is_paused = False
+            self.is_playing = True
+            return True
+        except Exception as err:
+            print(f"[Faery Radio] Error playing '{path.name}': {err}", file=sys.stderr)
+            return False
+
+    def _pick_next_announcer(self) -> Tuple[Optional[Path], str, str, str]:
+        """Selects the next announcer clip.
+        - With 35% chance, plays Liability.mp3 (if not played in the immediately preceding interlude).
+        - Otherwise, uniformly selects from regular announcer clips not in recent history (GTA radio style).
+        """
+        # 1. Higher chance for Liability disclaimer
+        if self.liability_file and not self.last_was_liability and random.random() < self.RATE:
+            self.last_was_liability = True
+            return (
+                self.liability_file,
+                RadioTrackType.LIABILITY,
+                "🎙️ Faery Legal Disclaimer",
+                "104.9 The Grift FM  ·  Station Advisory",
+            )
+
+        # 2. GTA-style anti-repeat pool for regular announcers
+        candidates = [p for p in self.regular_announcers if p.name not in self.recent_announcers]
+        if not candidates:
+            last_name = self.recent_announcers[-1] if self.recent_announcers else None
+            candidates = [p for p in self.regular_announcers if p.name != last_name]
+        if not candidates:
+            candidates = list(self.regular_announcers)
+
+        if not candidates:
+            # Fallback if no regular announcers exist but liability does
+            if self.liability_file:
+                self.last_was_liability = True
+                return (
+                    self.liability_file,
+                    RadioTrackType.LIABILITY,
+                    "🎙️ Faery Legal Disclaimer",
+                    "104.9 The Grift FM  ·  Station Advisory",
+                )
+            return (None, RadioTrackType.ANNOUNCER, "🎙️ Station DJ", "104.9 The Grift FM")
+
+        chosen = random.choice(candidates)
+        self.recent_announcers.append(chosen.name)
+        self.last_was_liability = False
+        return (
+            chosen,
+            RadioTrackType.ANNOUNCER,
+            "🎙️ On Air: Station DJ",
+            "104.9 The Grift FM  ·  Faery Good Radio",
+        )
+
+    def _prepare_and_play_song(self, song_path: Path) -> None:
+        """Plays a song, optionally preceded by Grift.mp3 bumper at the same rate."""
+        clean_title = song_path.stem
+        subtitle = "104.9 The Grift FM  ·  Faery Good Radio"
+
+        # Check if the Grift bumper should play right before this song (same rate: 35%)
+        if self.grift_file and random.random() < self.RATE:
+            self._pending_song = (song_path, clean_title, subtitle)
+            self._play_file(
+                self.grift_file,
+                RadioTrackType.GRIFT,
+                '🎙️ "You\'re on the grift"',
+                "104.9 The Grift FM  ·  Station Bumper",
+            )
+        else:
+            self._pending_song = None
+            self._play_file(song_path, RadioTrackType.SONG, clean_title, subtitle)
+
+    def start(self) -> None:
+        """Starts radio broadcasting."""
+        if not self.music_files:
+            self.rescan_audio_assets()
+        if not self.music_files:
+            self.current_track_title = "No Music Files Found"
+            self.current_track_subtitle = "Place MP3 files in assets/music"
+            self.is_playing = False
+            return
+
+        if not self.songs_playlist or self.current_song_idx < 0:
+            self._reshuffle_songs()
+
+        if self.current_song_idx >= len(self.songs_playlist):
+            self._reshuffle_songs()
+
+        first_song = self.songs_playlist[self.current_song_idx]
+        self.current_song_idx += 1
+        self._prepare_and_play_song(first_song)
+
+    def stop(self) -> None:
+        """Stops radio playback and releases audio output."""
+        try:
+            import pygame
+            if pygame.mixer.get_init():
+                pygame.mixer.music.stop()
+        except Exception:
+            pass
+        self.is_playing = False
+        self.is_paused = False
+        self._pending_song = None
+
+    def toggle_play_pause(self) -> None:
+        """Toggles between playing and paused state."""
+        if not self._ensure_mixer():
+            return
+        import pygame
+        if not self.is_playing:
+            self.start()
+            return
+        if self.is_paused:
+            try:
+                pygame.mixer.music.unpause()
+                self.is_paused = False
+            except Exception:
+                pass
+        else:
+            try:
+                pygame.mixer.music.pause()
+                self.is_paused = True
+            except Exception:
+                pass
+
+    def next_song(self) -> None:
+        """Skips immediately to the next song in the rotation."""
+        if not self.music_files:
+            return
+        if not self.songs_playlist or self.current_song_idx >= len(self.songs_playlist):
+            self._reshuffle_songs()
+
+        next_song = self.songs_playlist[self.current_song_idx]
+        self.current_song_idx += 1
+        self._pending_song = None
+        self._prepare_and_play_song(next_song)
+
+    def prev_song(self) -> None:
+        """Restarts current track or skips to the previous song if near start."""
+        if not self.music_files:
+            return
+        elapsed = self.get_elapsed_seconds()
+        if elapsed > 3.0 and self.current_track_path:
+            # Replay current track from 0:00
+            self._play_file(
+                self.current_track_path,
+                self.current_track_type,
+                self.current_track_title,
+                self.current_track_subtitle,
+            )
+            return
+
+        # Step back to previous song
+        if len(self.songs_playlist) > 0:
+            self.current_song_idx = max(0, self.current_song_idx - 2)
+            prev_song = self.songs_playlist[self.current_song_idx]
+            self.current_song_idx += 1
+            self._pending_song = None
+            self._prepare_and_play_song(prev_song)
+
+    def set_volume(self, vol: float) -> None:
+        """Updates playback volume (0.0 to 1.0) and persists in user config."""
+        clamped = max(0.0, min(1.0, float(vol)))
+        self.volume = clamped
+        self.config.radio_volume = clamped
+        if clamped > 0.0:
+            self.is_muted = False
+            self._prev_unmuted_volume = clamped
+        if self._ensure_mixer():
+            import pygame
+            try:
+                pygame.mixer.music.set_volume(0.0 if self.is_muted else self.volume)
+            except Exception:
+                pass
+
+    def toggle_mute(self) -> None:
+        """Toggles audio mute state."""
+        if self.is_muted:
+            self.is_muted = False
+            self.set_volume(self._prev_unmuted_volume or 0.7)
+        else:
+            self._prev_unmuted_volume = self.volume if self.volume > 0.05 else 0.7
+            self.is_muted = True
+            if self._ensure_mixer():
+                import pygame
+                try:
+                    pygame.mixer.music.set_volume(0.0)
+                except Exception:
+                    pass
+
+    def check_and_advance(self) -> None:
+        """Tick handler: detects track completion and advances the radio state machine."""
+        if not self.is_playing or self.is_paused:
+            return
+        if not self._ensure_mixer():
+            return
+        import pygame
+        try:
+            busy = pygame.mixer.music.get_busy()
+        except Exception:
+            busy = False
+
+        if not busy:
+            # Current track has finished!
+            if self.current_track_type == RadioTrackType.GRIFT:
+                # Grift bumper finished -> immediately start the pending song
+                if self._pending_song:
+                    s_path, s_title, s_sub = self._pending_song
+                    self._pending_song = None
+                    self._play_file(s_path, RadioTrackType.SONG, s_title, s_sub)
+                else:
+                    self.next_song()
+
+            elif self.current_track_type in (RadioTrackType.ANNOUNCER, RadioTrackType.LIABILITY):
+                # Announcer interlude finished -> transition towards next song (checking Grift bumper)
+                if not self.songs_playlist or self.current_song_idx >= len(self.songs_playlist):
+                    self._reshuffle_songs()
+                next_song = self.songs_playlist[self.current_song_idx]
+                self.current_song_idx += 1
+                self._prepare_and_play_song(next_song)
+
+            elif self.current_track_type == RadioTrackType.SONG:
+                # Song finished -> play an announcer interlude (Liability or DJ clip)
+                ann_path, ann_type, ann_title, ann_sub = self._pick_next_announcer()
+                if ann_path:
+                    self._play_file(ann_path, ann_type, ann_title, ann_sub)
+                else:
+                    self.next_song()
+
+    def get_elapsed_seconds(self) -> float:
+        """Returns current playback position in seconds."""
+        if not self.is_playing:
+            return 0.0
+        if not self._ensure_mixer():
+            return 0.0
+        import pygame
+        try:
+            pos_ms = pygame.mixer.music.get_pos()
+            if pos_ms >= 0:
+                elapsed = pos_ms / 1000.0
+            else:
+                elapsed = time.time() - self.current_start_time
+        except Exception:
+            elapsed = time.time() - self.current_start_time
+
+        if self.current_duration > 0:
+            return min(self.current_duration, max(0.0, elapsed))
+        return max(0.0, elapsed)
+
+    def get_progress(self) -> float:
+        """Returns playback progress as a ratio between 0.0 and 1.0."""
+        if self.current_duration <= 0.0:
+            return 0.0
+        return min(1.0, max(0.0, self.get_elapsed_seconds() / self.current_duration))
+
 
 
 # ---------------------------------------------------------------------------
@@ -1784,6 +2255,7 @@ class FaeryTranscriberApp(ctk.CTk):
         self.history = HistoryManager()
         self.engine = TranscriptionEngine()
         self.brand = BrandAssets()
+        self.radio_controller = RadioStationController(self.config)
 
         # State tracking
         self.selected_file: Optional[Path] = None
@@ -1834,6 +2306,9 @@ class FaeryTranscriberApp(ctk.CTk):
 
         # Check and pull updates once a week if internet is available (non-blocking)
         self._trigger_background_update_check()
+
+        # Start periodic radio state & playback ticker (250ms)
+        self.after(250, self._radio_tick)
 
     def _trigger_background_update_check(self, force: bool = False) -> None:
         """Launches a non-blocking background daemon thread to check and pull GitHub updates."""
@@ -2021,6 +2496,20 @@ class FaeryTranscriberApp(ctk.CTk):
         )
         guide_btn.pack(side="left", padx=(0, 6))
 
+        self.radio_toggle = ctk.CTkSwitch(
+            toolbar_right,
+            text="📻 Radio",
+            command=self._on_radio_toggle_changed,
+            font=self.font_body_bold,
+            progress_color=FAERY_PURPLE,
+            button_color=FAERY_PURPLE,
+            button_hover_color=FAERY_PURPLE_HOVER,
+            text_color=FAERY_SECONDARY_TEXT,
+            width=88,
+            height=30,
+        )
+        self.radio_toggle.pack(side="left", padx=(0, 6))
+
         self.theme_menu = ctk.CTkOptionMenu(
             toolbar_right,
             values=["Light", "Dark", "System"],
@@ -2039,6 +2528,7 @@ class FaeryTranscriberApp(ctk.CTk):
 
         self._build_transcribe_tab()
         self._build_history_tab()
+        self._build_radio_player()
 
     # -----------------------------------------------------------------------
     # Tab 1: Transcribe Studio Layout (Apple Bento Inspector + Notes Canvas)
@@ -3702,8 +4192,345 @@ class FaeryTranscriberApp(ctk.CTk):
 
             self._refresh_history_list(filter_text=None, resync=False)
 
+    # -----------------------------------------------------------------------
+    # Faery Good Radio (104.9 The Grift FM) - Ambient Bottom Bar Controller
+    # -----------------------------------------------------------------------
+    def _build_radio_player(self) -> None:
+        """Constructs the Apple-style ambient music and GTA radio player at the bottom of the window."""
+        self.grid_rowconfigure(2, weight=0)
+
+        self.radio_player_frame = ctk.CTkFrame(
+            self,
+            corner_radius=16,
+            fg_color=FAERY_CREAM_CARD,
+            border_width=1,
+            border_color=FAERY_CARD_BORDER,
+            height=68,
+        )
+        self.radio_player_frame.grid_columnconfigure(0, weight=0)
+        self.radio_player_frame.grid_columnconfigure(1, weight=1)
+        self.radio_player_frame.grid_columnconfigure(2, weight=0)
+        self.radio_player_frame.grid_rowconfigure(0, weight=1)
+
+        # Left Dock: Vinyl/Radio Icon Badge + Live Title & Station Info
+        left_dock = ctk.CTkFrame(self.radio_player_frame, fg_color="transparent")
+        left_dock.grid(row=0, column=0, sticky="w", padx=(14, 10), pady=8)
+
+        badge = ctk.CTkFrame(
+            left_dock,
+            width=42,
+            height=42,
+            corner_radius=12,
+            fg_color=FAERY_ROSE_CARD,
+            border_width=1,
+            border_color=FAERY_CARD_BORDER,
+        )
+        badge.pack(side="left", padx=(0, 10))
+        badge.pack_propagate(False)
+
+        badge_lbl = ctk.CTkLabel(badge, text="📻", font=ctk.CTkFont(size=20))
+        badge_lbl.place(relx=0.5, rely=0.5, anchor="center")
+
+        info_col = ctk.CTkFrame(left_dock, fg_color="transparent")
+        info_col.pack(side="left", fill="y", expand=True)
+
+        title_row = ctk.CTkFrame(info_col, fg_color="transparent")
+        title_row.pack(anchor="w")
+
+        self.radio_title_label = ctk.CTkLabel(
+            title_row,
+            text="Faery Good Radio",
+            font=self.font_body_bold,
+            text_color=FAERY_TEXT_PRIMARY,
+            anchor="w",
+        )
+        self.radio_title_label.pack(side="left", padx=(0, 6))
+
+        self.radio_live_badge = ctk.CTkLabel(
+            title_row,
+            text="ON AIR",
+            font=self.font_section_caps,
+            fg_color=FAERY_PURPLE,
+            text_color=("#FCF4ED", "#FCF4ED"),
+            corner_radius=6,
+            padx=6,
+            pady=1,
+        )
+        self.radio_live_badge.pack(side="left")
+
+        self.radio_artist_label = ctk.CTkLabel(
+            info_col,
+            text="104.9 The Grift FM  ·  Ambient Apothecary Tunes",
+            font=self.font_small,
+            text_color=FAERY_TEXT_MUTED,
+            anchor="w",
+        )
+        self.radio_artist_label.pack(anchor="w")
+
+        # Center Dock: Prev / Play-Pause / Next & Sleek Timeline
+        center_dock = ctk.CTkFrame(self.radio_player_frame, fg_color="transparent")
+        center_dock.grid(row=0, column=1, sticky="ew", padx=10, pady=6)
+        center_dock.grid_columnconfigure(0, weight=1)
+
+        controls_row = ctk.CTkFrame(center_dock, fg_color="transparent")
+        controls_row.pack(anchor="center")
+
+        self.radio_prev_btn = ctk.CTkButton(
+            controls_row,
+            text="⏮",
+            width=30,
+            height=28,
+            corner_radius=14,
+            fg_color=FAERY_SECONDARY_BTN,
+            hover_color=FAERY_SECONDARY_HOVER,
+            text_color=FAERY_SECONDARY_TEXT,
+            border_width=0,
+            font=ctk.CTkFont(size=13),
+            command=self._on_radio_prev_clicked,
+        )
+        self.radio_prev_btn.pack(side="left", padx=3)
+
+        self.radio_play_pause_btn = ctk.CTkButton(
+            controls_row,
+            text="⏸",
+            width=36,
+            height=30,
+            corner_radius=15,
+            fg_color=FAERY_PURPLE,
+            hover_color=FAERY_PURPLE_HOVER,
+            text_color=("#FCF4ED", "#FCF4ED"),
+            border_width=0,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            command=self._on_radio_play_pause_clicked,
+        )
+        self.radio_play_pause_btn.pack(side="left", padx=4)
+
+        self.radio_next_btn = ctk.CTkButton(
+            controls_row,
+            text="⏭",
+            width=30,
+            height=28,
+            corner_radius=14,
+            fg_color=FAERY_SECONDARY_BTN,
+            hover_color=FAERY_SECONDARY_HOVER,
+            text_color=FAERY_SECONDARY_TEXT,
+            border_width=0,
+            font=ctk.CTkFont(size=13),
+            command=self._on_radio_next_clicked,
+        )
+        self.radio_next_btn.pack(side="left", padx=3)
+
+        timeline_row = ctk.CTkFrame(center_dock, fg_color="transparent")
+        timeline_row.pack(anchor="center", fill="x", expand=True, pady=(2, 0))
+
+        self.radio_time_curr = ctk.CTkLabel(
+            timeline_row,
+            text="00:00",
+            font=self.font_small,
+            text_color=FAERY_TEXT_MUTED,
+            width=36,
+            anchor="e",
+        )
+        self.radio_time_curr.pack(side="left", padx=(0, 6))
+
+        self.radio_progress = ctk.CTkProgressBar(
+            timeline_row,
+            height=5,
+            corner_radius=2.5,
+            fg_color=FAERY_SEGMENT_TRACK,
+            progress_color=FAERY_PURPLE,
+        )
+        self.radio_progress.pack(side="left", fill="x", expand=True)
+        self.radio_progress.set(0.0)
+
+        self.radio_time_total = ctk.CTkLabel(
+            timeline_row,
+            text="--:--",
+            font=self.font_small,
+            text_color=FAERY_TEXT_MUTED,
+            width=36,
+            anchor="w",
+        )
+        self.radio_time_total.pack(side="left", padx=(6, 0))
+
+        # Right Dock: Mute Icon + Volume Slider + Close '✕' Button
+        right_dock = ctk.CTkFrame(self.radio_player_frame, fg_color="transparent")
+        right_dock.grid(row=0, column=2, sticky="e", padx=(10, 14), pady=8)
+
+        self.radio_mute_btn = ctk.CTkButton(
+            right_dock,
+            text="🔊",
+            width=28,
+            height=28,
+            corner_radius=14,
+            fg_color="transparent",
+            hover_color=FAERY_SECONDARY_HOVER,
+            text_color=FAERY_SECONDARY_TEXT,
+            border_width=0,
+            font=ctk.CTkFont(size=13),
+            command=self._on_radio_mute_clicked,
+        )
+        self.radio_mute_btn.pack(side="left", padx=(0, 2))
+
+        self.radio_volume_slider = ctk.CTkSlider(
+            right_dock,
+            width=76,
+            height=14,
+            from_=0.0,
+            to=1.0,
+            number_of_steps=100,
+            progress_color=FAERY_PURPLE,
+            button_color=FAERY_PURPLE,
+            button_hover_color=FAERY_PURPLE_HOVER,
+            fg_color=FAERY_SEGMENT_TRACK,
+            command=self._on_radio_volume_changed,
+        )
+        self.radio_volume_slider.set(self.radio_controller.volume)
+        self.radio_volume_slider.pack(side="left", padx=(0, 8))
+
+        self.radio_close_btn = ctk.CTkButton(
+            right_dock,
+            text="✕",
+            width=26,
+            height=26,
+            corner_radius=13,
+            fg_color=FAERY_SECONDARY_BTN,
+            hover_color=FAERY_SECONDARY_HOVER,
+            text_color=FAERY_SECONDARY_TEXT,
+            border_width=0,
+            font=self.font_small,
+            command=self._close_radio_player,
+        )
+        self.radio_close_btn.pack(side="left")
+
+        # The radio/music player UI should be hidden unless the radio toggle is on.
+        if self.config.radio_enabled:
+            self.radio_toggle.select()
+            self.radio_player_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 14))
+            self.radio_controller.start()
+        else:
+            self.radio_toggle.deselect()
+            self.radio_player_frame.grid_forget()
+
+    def _on_radio_toggle_changed(self) -> None:
+        """Called when the 📻 Radio toggle switch in the header is flipped."""
+        is_on = self.radio_toggle.get() == 1
+        if is_on:
+            self.radio_player_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 14))
+            self.config.radio_enabled = True
+            if not self.radio_controller.is_playing:
+                self.radio_controller.start()
+        else:
+            self.radio_controller.stop()
+            self.radio_player_frame.grid_forget()
+            self.config.radio_enabled = False
+
+    def _toggle_radio(self) -> None:
+        """Toggles the radio switch via keyboard shortcut (⌘R / Ctrl+R) or View menu."""
+        if self.radio_toggle.get() == 1:
+            self.radio_toggle.deselect()
+        else:
+            self.radio_toggle.select()
+        self._on_radio_toggle_changed()
+
+    def _close_radio_player(self) -> None:
+        """Hides the radio player and turns the toggle switch off."""
+        self.radio_toggle.deselect()
+        self._on_radio_toggle_changed()
+
+    def _on_radio_play_pause_clicked(self) -> None:
+        """Toggles radio play/pause."""
+        self.radio_controller.toggle_play_pause()
+        self.radio_play_pause_btn.configure(text="⏸" if not self.radio_controller.is_paused else "▶")
+
+    def _on_radio_next_clicked(self) -> None:
+        """Advances to the next song."""
+        self.radio_controller.next_song()
+
+    def _on_radio_prev_clicked(self) -> None:
+        """Returns to the previous song or restarts current track."""
+        self.radio_controller.prev_song()
+
+    def _on_radio_volume_changed(self, val: float) -> None:
+        """Handles volume slider movement."""
+        self.radio_controller.set_volume(float(val))
+        self._update_radio_mute_icon()
+
+    def _on_radio_mute_clicked(self) -> None:
+        """Toggles mute on/off."""
+        self.radio_controller.toggle_mute()
+        self.radio_volume_slider.set(0.0 if self.radio_controller.is_muted else self.radio_controller.volume)
+        self._update_radio_mute_icon()
+
+    def _update_radio_mute_icon(self) -> None:
+        """Updates the speaker icon to match volume/mute state."""
+        if self.radio_controller.is_muted or self.radio_controller.volume == 0.0:
+            self.radio_mute_btn.configure(text="🔇")
+        elif self.radio_controller.volume < 0.35:
+            self.radio_mute_btn.configure(text="🔈")
+        elif self.radio_controller.volume < 0.7:
+            self.radio_mute_btn.configure(text="🔉")
+        else:
+            self.radio_mute_btn.configure(text="🔊")
+
+    def _radio_tick(self) -> None:
+        """Periodic 250ms tick loop: updates radio progress bar, track labels, and state."""
+        try:
+            if not self.winfo_exists():
+                return
+        except Exception:
+            return
+
+        try:
+            if hasattr(self, "radio_controller") and self.radio_controller.is_playing:
+                self.radio_controller.check_and_advance()
+
+                # Update labels
+                self.radio_title_label.configure(text=self.radio_controller.current_track_title)
+                self.radio_artist_label.configure(text=self.radio_controller.current_track_subtitle)
+
+                # Badge styling
+                t_type = self.radio_controller.current_track_type
+                if t_type == RadioTrackType.LIABILITY:
+                    self.radio_live_badge.configure(text="DISCLAIMER", fg_color=FAERY_BERRY_TEXT)
+                elif t_type in (RadioTrackType.ANNOUNCER, RadioTrackType.GRIFT):
+                    self.radio_live_badge.configure(text="INTERLUDE", fg_color=FAERY_SECONDARY_TEXT)
+                else:
+                    self.radio_live_badge.configure(text="ON AIR", fg_color=FAERY_PURPLE)
+
+                # Time and progress
+                elapsed = self.radio_controller.get_elapsed_seconds()
+                total = self.radio_controller.current_duration
+                self.radio_time_curr.configure(text=format_seconds_mm_ss(elapsed))
+                self.radio_time_total.configure(text=format_seconds_mm_ss(total) if total > 0 else "--:--")
+                self.radio_progress.set(min(1.0, max(0.0, elapsed / total)) if total > 0 else 0.0)
+
+                # Play/Pause button icon
+                self.radio_play_pause_btn.configure(text="⏸" if not self.radio_controller.is_paused else "▶")
+        except Exception:
+            pass
+        finally:
+            try:
+                if self.winfo_exists():
+                    self._radio_after_id = self.after(250, self._radio_tick)
+            except Exception:
+                pass
+
     def _on_window_close(self) -> None:
         """Handles graceful application shutdown, guaranteeing scratch purge."""
+        try:
+            if hasattr(self, "_radio_after_id") and self._radio_after_id:
+                self.after_cancel(self._radio_after_id)
+                self._radio_after_id = None
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "radio_controller"):
+                self.radio_controller.stop()
+        except Exception:
+            pass
+
         if self.is_transcribing:
             if messagebox.askyesno(
                 "Transcription in Progress",
@@ -3787,6 +4614,11 @@ class FaeryTranscriberApp(ctk.CTk):
         )
         view_menu.add_separator()
         view_menu.add_command(
+            label="📻 Faery Radio (104.9 The Grift FM)",
+            accelerator=f"{mod_sym}+R",
+            command=self._toggle_radio,
+        )
+        view_menu.add_command(
             label="Toggle Dark / Light Theme",
             command=self._cycle_theme,
         )
@@ -3846,6 +4678,8 @@ class FaeryTranscriberApp(ctk.CTk):
             self.bind(f"<{mod}-Key-O>", lambda e: self._on_open_folder_clicked())
             self.bind(f"<{mod}-Key-s>", lambda e: self._on_quick_save())
             self.bind(f"<{mod}-Key-Return>", lambda e: self._on_generate_clicked())
+            self.bind(f"<{mod}-Key-r>", lambda e: self._toggle_radio())
+            self.bind(f"<{mod}-Key-R>", lambda e: self._toggle_radio())
             self.bind(f"<{mod}-Key-1>", lambda e: self.tabview.set("🎙️ Transcribe"))
             self.bind(f"<{mod}-Key-2>", lambda e: self.tabview.set("📜 History"))
             self.bind(f"<{mod}-Key-q>", lambda e: self._on_window_close())
