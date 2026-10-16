@@ -100,11 +100,11 @@ FAERY_DIVIDER = ("#EDE6F7", "#281B38")                 # Ultra-subtle 1px interi
 FAERY_ACTIVE_BORDER = ("#7A2DB4", "#C07EF2")           # Highlighted Selection Border
 FAERY_SEGMENT_TRACK = ("#EAE3F5", "#241834")           # macOS Sonoma Segmented Control Track
 FAERY_SEGMENT_HOVER = ("#DFD5F0", "#2F2044")           # Segmented Unselected Hover
-FAERY_SECONDARY_BTN = ("#EFE9F9", "#281B3B")           # Borderless Apple-Tinted Pill Button
-FAERY_SECONDARY_HOVER = ("#E2D6F5", "#36244F")         # Secondary Pill Button Hover
-FAERY_SECONDARY_TEXT = ("#5E1F8E", "#E8D9FF")          # Secondary Pill Button Text
-FAERY_TEXT_PRIMARY = ("#231133", "#F6F0FF")            # High-Contrast Editorial Ink
-FAERY_TEXT_MUTED = ("#745B8C", "#A890C2")              # Apple Secondary Label Plum
+FAERY_SECONDARY_BTN = ("#EDE5F7", "#2D1D42")           # Borderless Apple-Tinted Pill Button
+FAERY_SECONDARY_HOVER = ("#DFCFF2", "#3E2B57")         # Secondary Pill Button Hover
+FAERY_SECONDARY_TEXT = ("#4A1773", "#F2E8FF")          # High-Contrast Secondary Pill Button Text
+FAERY_TEXT_PRIMARY = ("#200D30", "#F8F2FF")            # High-Contrast Editorial Ink
+FAERY_TEXT_MUTED = ("#461B6D", "#D8C2F2")              # Clear Apple Secondary Label Plum
 FAERY_SAGE_GREEN = "#7EA156"                           # Apothecary Herbal Sage Green (Copied/Saved feedback)
 FAERY_BERRY_RED = ("#FBE9EF", "#3A1828")               # Soft Tinted Destructive Surface
 FAERY_BERRY_HOVER = ("#F5D0DD", "#4F1F35")
@@ -332,6 +332,47 @@ class TranscriptFormatter:
         if not segments:
             return ""
         return " ".join(seg.text.strip() for seg in segments if seg.text.strip())
+
+
+class FaerySegmentedButton(ctk.CTkSegmentedButton):
+    """
+    Apple macOS Sonoma-style Segmented Control:
+    - Selected segment displays crisp cream/white text on the primary purple pill.
+    - Unselected segments display high-contrast deep violet text (Light Mode) or luminous lavender (Dark Mode).
+    """
+
+    def __init__(self, *args, **kwargs):
+        self._selected_text_color = kwargs.pop("selected_text_color", ("#FCF4ED", "#FCF4ED"))
+        self._unselected_text_color = kwargs.pop("unselected_text_color", FAERY_SECONDARY_TEXT)
+        super().__init__(*args, **kwargs)
+        self._apply_segment_text_contrast()
+
+    def _create_buttons_from_values(self):
+        super()._create_buttons_from_values()
+        self._apply_segment_text_contrast()
+
+    def _select_button_by_value(self, value: str):
+        super()._select_button_by_value(value)
+        if hasattr(self, "_buttons_dict") and value in self._buttons_dict:
+            self._buttons_dict[value].configure(text_color=self._selected_text_color)
+
+    def _unselect_button_by_value(self, value: str):
+        super()._unselect_button_by_value(value)
+        if hasattr(self, "_buttons_dict") and value in self._buttons_dict:
+            self._buttons_dict[value].configure(text_color=self._unselected_text_color)
+
+    def _apply_segment_text_contrast(self):
+        if not hasattr(self, "_buttons_dict"):
+            return
+        for val, btn in self._buttons_dict.items():
+            if val == self._current_value:
+                btn.configure(text_color=self._selected_text_color)
+            else:
+                btn.configure(text_color=self._unselected_text_color)
+
+    def set(self, value: str, from_variable_callback: bool = False, from_button_callback: bool = False):
+        super().set(value, from_variable_callback=from_variable_callback, from_button_callback=from_button_callback)
+        self._apply_segment_text_contrast()
 
 
 def get_verified_ffmpeg_exe() -> str:
@@ -1214,7 +1255,7 @@ class FaeryTranscriberApp(ctk.CTk):
                     "📜 History": parent_app.tab_history,
                 }
                 self._current = "🎙️ Transcribe"
-                self.segmented = ctk.CTkSegmentedButton(
+                self.segmented = FaerySegmentedButton(
                     seg_parent,
                     values=["🎙️ Transcribe", "📜 History"],
                     command=self.set,
@@ -1226,7 +1267,8 @@ class FaeryTranscriberApp(ctk.CTk):
                     selected_hover_color=FAERY_PURPLE_HOVER,
                     unselected_color=FAERY_SEGMENT_TRACK,
                     unselected_hover_color=FAERY_SEGMENT_HOVER,
-                    text_color=("#FCF4ED", "#FCF4ED"),
+                    selected_text_color=("#FCF4ED", "#FCF4ED"),
+                    unselected_text_color=FAERY_SECONDARY_TEXT,
                     text_color_disabled=FAERY_TEXT_MUTED,
                 )
                 self.segmented.set("🎙️ Transcribe")
@@ -1441,7 +1483,7 @@ class FaeryTranscriberApp(ctk.CTk):
             border_width=1,
             border_color=FAERY_DIVIDER,
             fg_color=FAERY_LAVENDER_BG,
-            text_color=FAERY_TEXT_MUTED,
+            text_color=FAERY_TEXT_PRIMARY,
             font=self.font_small,
         )
         self.out_path_entry.grid(row=0, column=0, sticky="ew", padx=(0, 6))
@@ -1505,7 +1547,7 @@ class FaeryTranscriberApp(ctk.CTk):
         )
         self.stats_badge.pack(side="left")
 
-        self.view_selector = ctk.CTkSegmentedButton(
+        self.view_selector = FaerySegmentedButton(
             result_header,
             values=["📄 Clean Paragraphs", "⏱️ Timecoded (YouTube)", "📝 Raw Text"],
             command=self._on_view_mode_changed,
@@ -1517,7 +1559,8 @@ class FaeryTranscriberApp(ctk.CTk):
             selected_hover_color=FAERY_PURPLE_HOVER,
             unselected_color=FAERY_SEGMENT_TRACK,
             unselected_hover_color=FAERY_SEGMENT_HOVER,
-            text_color=("#FCF4ED", "#FCF4ED"),
+            selected_text_color=("#FCF4ED", "#FCF4ED"),
+            unselected_text_color=FAERY_SECONDARY_TEXT,
         )
         self.view_selector.set("📄 Clean Paragraphs")
         self.view_selector.grid(row=0, column=2, sticky="e")
@@ -1561,6 +1604,7 @@ class FaeryTranscriberApp(ctk.CTk):
             fg_color=FAERY_PURPLE,
             hover_color=FAERY_PURPLE_HOVER,
             text_color=("#FCF4ED", "#FCF4ED"),
+            text_color_disabled=("#E8DCF7", "#D4C2EB"),
             corner_radius=19,
             command=self._on_generate_clicked,
             width=192,
@@ -1788,7 +1832,7 @@ class FaeryTranscriberApp(ctk.CTk):
         left_crud = ctk.CTkFrame(crud_toolbar, fg_color="transparent")
         left_crud.grid(row=0, column=0, sticky="w")
 
-        self.history_view_selector = ctk.CTkSegmentedButton(
+        self.history_view_selector = FaerySegmentedButton(
             left_crud,
             values=["📄 Clean Paragraphs", "⏱️ Timecoded", "📝 Markdown"],
             command=self._on_history_view_mode_changed,
@@ -1800,7 +1844,8 @@ class FaeryTranscriberApp(ctk.CTk):
             selected_hover_color=FAERY_PURPLE_HOVER,
             unselected_color=FAERY_SEGMENT_TRACK,
             unselected_hover_color=FAERY_SEGMENT_HOVER,
-            text_color=("#FCF4ED", "#FCF4ED"),
+            selected_text_color=("#FCF4ED", "#FCF4ED"),
+            unselected_text_color=FAERY_SECONDARY_TEXT,
         )
         self.history_view_selector.set("📄 Clean Paragraphs")
         self.history_view_selector.pack(side="left", padx=(0, 10))
@@ -2029,10 +2074,20 @@ class FaeryTranscriberApp(ctk.CTk):
 
         # Update controls
         self.select_file_btn.configure(state="disabled")
-        self.generate_btn.configure(state="disabled")
+        self.generate_btn.configure(
+            state="disabled",
+            text="⏳ Transcribing…",
+            fg_color=("#8B62B8", "#442168"),
+            text_color_disabled=("#F0E6FA", "#DDD0F0"),
+        )
         self.model_dropdown.configure(state="disabled")
         self.change_folder_btn.configure(state="disabled")
-        self.cancel_btn.configure(state="normal")
+        self.cancel_btn.configure(
+            state="normal",
+            fg_color=FAERY_BERRY_RED,
+            hover_color=FAERY_BERRY_HOVER,
+            text_color=FAERY_BERRY_TEXT,
+        )
 
         self.progress_bar.configure(mode="indeterminate")
         self.progress_bar.start()
@@ -2195,10 +2250,20 @@ class FaeryTranscriberApp(ctk.CTk):
     def _reset_controls(self) -> None:
         self.is_transcribing = False
         self.select_file_btn.configure(state="normal")
-        self.generate_btn.configure(state="normal")
+        self.generate_btn.configure(
+            state="normal",
+            text="✨ Generate Transcript",
+            fg_color=FAERY_PURPLE,
+            text_color=("#FCF4ED", "#FCF4ED"),
+        )
         self.model_dropdown.configure(state="normal")
         self.change_folder_btn.configure(state="normal")
-        self.cancel_btn.configure(state="disabled")
+        self.cancel_btn.configure(
+            state="disabled",
+            fg_color=FAERY_SEGMENT_TRACK,
+            hover_color=FAERY_SEGMENT_HOVER,
+            text_color=FAERY_TEXT_MUTED,
+        )
 
     def _on_cancel_clicked(self) -> None:
         if self.is_transcribing:
