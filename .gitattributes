@@ -1,0 +1,9 @@
+# Preserve LF endings for macOS / Linux shell and command scripts
+*.command text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+
+# Binary assets
+*.png binary
+*.ico binary
+*.icns binary

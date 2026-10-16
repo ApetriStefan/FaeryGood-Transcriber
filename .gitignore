@@ -1,0 +1,46 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# PyInstaller / Build outputs
+build/
+dist/
+*.dmg
+*.spec.bak
+*.egg-info/
+
+# Local configuration & user data
+.faery_transcriber_config.json
+.faery_transcriptions_history.json
+
+# Scratch directories & temporary test media
+scratch/
+*.wav
+*.mp3
+*.m4a
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.log
+*.tmp
+*.temp
+
+# OS & Editor generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
