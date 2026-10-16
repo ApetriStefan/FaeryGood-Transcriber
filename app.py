@@ -103,6 +103,7 @@ FAERY_SEGMENT_HOVER = ("#DFD5F0", "#2F2044")           # Segmented Unselected Ho
 FAERY_SECONDARY_BTN = ("#EDE5F7", "#2D1D42")           # Borderless Apple-Tinted Pill Button
 FAERY_SECONDARY_HOVER = ("#DFCFF2", "#3E2B57")         # Secondary Pill Button Hover
 FAERY_SECONDARY_TEXT = ("#4A1773", "#F2E8FF")          # High-Contrast Secondary Pill Button Text
+FAERY_SECONDARY_DISABLED_TEXT = ("#5E3E7A", "#AFA0C5") # High-Contrast Disabled Secondary Button Text
 FAERY_TEXT_PRIMARY = ("#200D30", "#F8F2FF")            # High-Contrast Editorial Ink
 FAERY_TEXT_MUTED = ("#461B6D", "#D8C2F2")              # Clear Apple Secondary Label Plum
 FAERY_SAGE_GREEN = "#7EA156"                           # Apothecary Herbal Sage Green (Copied/Saved feedback)
@@ -1619,6 +1620,7 @@ class FaeryTranscriberApp(ctk.CTk):
             fg_color=FAERY_SEGMENT_TRACK,
             hover_color=FAERY_SEGMENT_HOVER,
             text_color=FAERY_TEXT_MUTED,
+            text_color_disabled=FAERY_SECONDARY_DISABLED_TEXT,
             corner_radius=19,
             command=self._on_cancel_clicked,
             width=74,
@@ -1862,6 +1864,7 @@ class FaeryTranscriberApp(ctk.CTk):
             fg_color=FAERY_SECONDARY_BTN,
             hover_color=FAERY_SECONDARY_HOVER,
             text_color=FAERY_SECONDARY_TEXT,
+            text_color_disabled=FAERY_SECONDARY_DISABLED_TEXT,
             border_width=0,
             font=self.font_body_bold,
             command=self._on_history_rename_clicked,
@@ -1878,6 +1881,7 @@ class FaeryTranscriberApp(ctk.CTk):
             fg_color=FAERY_SECONDARY_BTN,
             hover_color=FAERY_SECONDARY_HOVER,
             text_color=FAERY_SECONDARY_TEXT,
+            text_color_disabled=FAERY_SECONDARY_DISABLED_TEXT,
             border_width=0,
             font=self.font_body_bold,
             command=self._on_history_save_edits_clicked,
@@ -1894,6 +1898,7 @@ class FaeryTranscriberApp(ctk.CTk):
             fg_color=FAERY_SECONDARY_BTN,
             hover_color=FAERY_SECONDARY_HOVER,
             text_color=FAERY_SECONDARY_TEXT,
+            text_color_disabled=FAERY_SECONDARY_DISABLED_TEXT,
             border_width=0,
             font=self.font_body_bold,
             command=self._on_history_copy_clicked,
@@ -1910,6 +1915,7 @@ class FaeryTranscriberApp(ctk.CTk):
             fg_color=FAERY_SECONDARY_BTN,
             hover_color=FAERY_SECONDARY_HOVER,
             text_color=FAERY_SECONDARY_TEXT,
+            text_color_disabled=FAERY_SECONDARY_DISABLED_TEXT,
             border_width=0,
             font=self.font_body_bold,
             command=self._on_history_open_file_clicked,
@@ -1926,6 +1932,7 @@ class FaeryTranscriberApp(ctk.CTk):
             fg_color=FAERY_BERRY_RED,
             hover_color=FAERY_BERRY_HOVER,
             text_color=FAERY_BERRY_TEXT,
+            text_color_disabled=FAERY_SECONDARY_DISABLED_TEXT,
             border_width=0,
             font=self.font_body_bold,
             command=self._on_history_delete_clicked,
@@ -2263,6 +2270,7 @@ class FaeryTranscriberApp(ctk.CTk):
             fg_color=FAERY_SEGMENT_TRACK,
             hover_color=FAERY_SEGMENT_HOVER,
             text_color=FAERY_TEXT_MUTED,
+            text_color_disabled=FAERY_SECONDARY_DISABLED_TEXT,
         )
 
     def _on_cancel_clicked(self) -> None:

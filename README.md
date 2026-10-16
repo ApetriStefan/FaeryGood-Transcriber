@@ -77,20 +77,90 @@ TranscriptionEngine/
 
 ---
 
-## 🍎 macOS Usage (Non-Technical 1-Click Workflow)
+## 🍎 Step-by-Step Mac Guide (For Ericka & Beginners)
 
-### Option 1: 1-Click Launch (No Terminal Needed)
-1. Download or copy the `TranscriptionEngine` folder to your Mac (e.g. in `~/Documents` or `~/Desktop`).
-2. Double-click **`Run_Mac.command`** in Finder.
-3. The script automatically sets up the environment in the background and launches **Faery Good Transcriber**.
+Even if you have never used Terminal or written a line of code in your life, you can run **Faery Good Transcriber** on your Mac in 2 minutes.
 
-### Option 2: 1-Click Standalone `.app` or `.dmg` Installer
-1. Double-click **`Create_Mac_DMG.command`** in Finder.
-2. The script compiles `FaeryTranscriber.app` with the custom Faery Good icon, clears Gatekeeper quarantine flags (`xattr -cr`), and creates:
+---
+
+### Step 1: Download & Unpack the Studio Folder
+1. On GitHub, click the green **Code** button at the top right, then click **Download ZIP**.
+2. Go to your **Downloads** folder in Finder.
+3. Double-click `FaeryGood-Transcriber-main.zip` to unzip it.
+4. Move the unzipped `FaeryGood-Transcriber` folder into your **Documents** or **Applications** folder (or keep it on your **Desktop**).
+
+---
+
+### Step 2: Ensure Python 3 is on Your Mac (One-Time Check)
+Modern Macs running macOS Sonoma often don't have Python 3 pre-installed.
+- If you don't have Python 3, don't worry: when you launch `Run_Mac.command`, it will automatically show a friendly alert with a direct button to download it.
+- Or, install it directly in 1 minute from **[python.org/downloads](https://www.python.org/downloads/)** (choose the latest macOS 64-bit universal installer and follow the standard installer prompts).
+
+---
+
+### Step 3: Launch with 1-Click!
+Open the `FaeryGood-Transcriber` folder in Finder and simply **double-click**:
+
+👉 **`Run_Mac.command`**
+
+That's it! A Terminal window will open and automatically:
+- Create a private isolated virtual environment (`.venv`).
+- Install all necessary dependencies (`customtkinter`, `faster-whisper`, `imageio-ffmpeg`, `pillow`).
+- Launch the **Faery Good Transcriber** studio window!
+
+> 💡 **First-Time Launch Note:** On the very first launch, it will take about 1–2 minutes to configure dependencies and download the Whisper AI model. After that, it launches in seconds and works **100% offline** without needing internet!
+
+---
+
+### 🛡️ macOS Security & Permission Tips (If macOS Asks)
+
+Apple has strict security rules for files downloaded from the web. If you encounter either of these prompts, here is the 10-second fix:
+
+#### 1. "Cannot be opened because it is from an unidentified developer"
+- **Fix:** Don't double-click. Instead, **Right-Click** (or hold `Control` and click) on `Run_Mac.command`, then select **Open**. In the dialog that appears, click **Open**. macOS will remember your choice and you won't be asked again!
+
+#### 2. "The file could not be executed because you do not have appropriate access privileges"
+- If executable permissions were stripped by your zip unarchiver:
+  1. Open the **Terminal** app (press `⌘ + Space`, type `Terminal`, and press `Enter`).
+  2. Copy and paste this single line, then press `Enter`:
+     ```bash
+     chmod +x ~/Downloads/FaeryGood-Transcriber*/*.command
+     ```
+     *(Or simply type `chmod +x `, drag `Run_Mac.command` into the Terminal window, and press `Enter`)*.
+  3. Now double-click `Run_Mac.command` in Finder!
+
+---
+
+### 📦 Option 2: Build a Native `.app` & Drag-and-Drop `.dmg` Installer
+
+If you prefer having a true Mac application that you can drag into `/Applications` and pin to your Dock just like Apple Pages or Spotify:
+
+1. Inside the project folder, double-click **`Create_Mac_DMG.command`** (or right-click → Open).
+2. It compiles `FaeryTranscriber.app` with the official Faery Good squircle icon and automatically produces:
    ```text
    FaeryTranscriber-Intel-Mac.dmg
    ```
-3. Double-click the `.dmg` file, drag **FaeryTranscriber** into **Applications**, and launch it from Launchpad, Dock, or Spotlight!
+3. Double-click the `.dmg` file:
+   - A macOS installer window opens.
+   - Drag **Faery Good Transcriber** into the **Applications** folder shortcut.
+   - Done! You can now launch it anytime from **Launchpad**, **Spotlight** (`⌘ Space`), or keep it in your **Dock**.
+
+---
+
+### 🎬 How to Transcribe a Clip (Creator Workflow)
+
+1. **Select Media:** Click **Select Video or Audio…** (or press `⌘O`). Pick any Instagram Reel, TikTok, YouTube video, or voice memo (`.mp4`, `.mov`, `.m4a`, `.mp3`, `.wav`, `.mkv`).
+2. **Choose Accuracy Engine:**
+   - **High Accuracy (small.en - Recommended):** Best for clear punctuation, accuracy, and longer videos.
+   - **Standard (base.en - Fast):** 2x faster, great for quick 30-second reels.
+3. **Generate:** Click **✨ Generate Transcript** (or press `⌘Return`).
+   - The status bar and progress bar stream live.
+   - The Cancel button allows you to stop anytime and immediately wipes any scratch files.
+   - A gentle chime rings when done!
+4. **Copy & Share:**
+   - Toggle between **📄 Clean Paragraphs** (natural speech pauses for social captions) and **⏱️ Timecoded (YouTube)** (with exact `00:00 - ...` timestamps for video chapters).
+   - Click **📋 Copy to Clipboard** (or press `⌘C`).
+   - Click **💾 .txt** or **📝 .md** to save directly into your output folder.
 
 ---
 
