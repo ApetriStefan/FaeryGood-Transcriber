@@ -85,26 +85,30 @@ DEFAULT_MODEL_DISPLAY = "High Accuracy (small.en - Recommended)"
 
 MIN_DISK_SPACE_MB = 500  # Minimum free disk space in MB required for scratch audio conversion
 
-# Official Faery Good (https://faerygood.com/) CSS Color Schemes
-# Scheme 1: Lavender (#EDE6FF) + Royal Faery Purple (#7A2DB4) + Warm Cream (#FCF4ED)
-# Scheme 2: Petal Rose (#FCECF5) + Orchid (#C07EF2)
+# Official Faery Good (https://faerygood.com/) CSS Color Schemes — Refined for macOS Sonoma HIG
+# Scheme 1: Lavender + Royal Faery Purple (#7A2DB4) + Warm Porcelain Cream
+# Scheme 2: Petal Rose + Orchid (#C07EF2)
 # Scheme 4: Apothecary Herbal Sage Green (#7EA156)
-FAERY_PURPLE = ("#7A2DB4", "#9146CC")           # Primary Royal Faery Purple (rgb 122,45,180)
-FAERY_PURPLE_HOVER = ("#612091", "#A65CE0")     # Deep Amethyst Hover
-FAERY_LAVENDER_BG = ("#EDE6FF", "#191024")      # Window Background (Soft Lavender / Twilight Plum)
+FAERY_PURPLE = ("#7A2DB4", "#9146CC")                  # Primary Royal Faery Purple (rgb 122,45,180)
+FAERY_PURPLE_HOVER = ("#632096", "#A45EE0")            # Deep Amethyst Hover
+FAERY_LAVENDER_BG = ("#F3EFFB", "#120D1A")             # Apple Studio Alabaster-Lavender / Deep Obsidian Plum
 FAERY_BG = FAERY_LAVENDER_BG
-FAERY_CREAM_CARD = ("#FCF4ED", "#251836")       # Card Surface (Warm Apothecary Cream / Enchanted Card)
-FAERY_ROSE_CARD = ("#FCECF5", "#312047")        # Accent Card (Petal Rose Mist / Deep Orchid)
-FAERY_CARD_BORDER = ("#D8C4F7", "#4A2E6B")      # Soft Lilac Card Border
-FAERY_ACTIVE_BORDER = ("#7A2DB4", "#C07EF2")    # Highlighted Faery Border
-FAERY_SECONDARY_BTN = ("#EDE6FF", "#34204D")    # Secondary Pill Button Surface
-FAERY_SECONDARY_HOVER = ("#DFD0FF", "#462C66")  # Secondary Pill Button Hover
-FAERY_SECONDARY_TEXT = ("#6A22A0", "#EDE6FF")   # Secondary Pill Button Text
-FAERY_TEXT_PRIMARY = ("#3A1259", "#F5EEFF")     # Deep Violet Heading / Luminous Lavender
-FAERY_TEXT_MUTED = ("#6E488F", "#BFA6D9")       # Soft Plum Subtitle / Metadata
-FAERY_SAGE_GREEN = "#7EA156"                    # Apothecary Herbal Sage Green (Copied/Saved feedback)
-FAERY_BERRY_RED = "#A82458"                     # Warm Berry Rose (Delete action)
-FAERY_BERRY_HOVER = "#871A45"
+FAERY_CREAM_CARD = ("#FCFBF9", "#1B1326")              # Warm Porcelain Card / Elevated Dark Plum Surface
+FAERY_ROSE_CARD = ("#FAF1F7", "#251936")               # Subtle Rose Quartz / Muted Amethyst Accent
+FAERY_CARD_BORDER = ("#E4DAF2", "#2F2042")             # 1px Hairline Card Border
+FAERY_DIVIDER = ("#EDE6F7", "#281B38")                 # Ultra-subtle 1px interior divider
+FAERY_ACTIVE_BORDER = ("#7A2DB4", "#C07EF2")           # Highlighted Selection Border
+FAERY_SEGMENT_TRACK = ("#EAE3F5", "#241834")           # macOS Sonoma Segmented Control Track
+FAERY_SEGMENT_HOVER = ("#DFD5F0", "#2F2044")           # Segmented Unselected Hover
+FAERY_SECONDARY_BTN = ("#EFE9F9", "#281B3B")           # Borderless Apple-Tinted Pill Button
+FAERY_SECONDARY_HOVER = ("#E2D6F5", "#36244F")         # Secondary Pill Button Hover
+FAERY_SECONDARY_TEXT = ("#5E1F8E", "#E8D9FF")          # Secondary Pill Button Text
+FAERY_TEXT_PRIMARY = ("#231133", "#F6F0FF")            # High-Contrast Editorial Ink
+FAERY_TEXT_MUTED = ("#745B8C", "#A890C2")              # Apple Secondary Label Plum
+FAERY_SAGE_GREEN = "#7EA156"                           # Apothecary Herbal Sage Green (Copied/Saved feedback)
+FAERY_BERRY_RED = ("#FBE9EF", "#3A1828")               # Soft Tinted Destructive Surface
+FAERY_BERRY_HOVER = ("#F5D0DD", "#4F1F35")
+FAERY_BERRY_TEXT = ("#A82458", "#FF85B3")
 
 
 def get_assets_dir() -> Path:
@@ -147,16 +151,16 @@ class BrandAssets:
             mascot_p = self.assets_dir / "faery_mascot.png"
             if mascot_p.exists():
                 m_img = Image.open(mascot_p)
-                self.mascot_header = ctk.CTkImage(light_image=m_img, dark_image=m_img, size=(50, 56))
-                self.mascot_dialog = ctk.CTkImage(light_image=m_img, dark_image=m_img, size=(64, 72))
+                self.mascot_header = ctk.CTkImage(light_image=m_img, dark_image=m_img, size=(38, 43))
+                self.mascot_dialog = ctk.CTkImage(light_image=m_img, dark_image=m_img, size=(58, 65))
 
             logo_l = self.assets_dir / "faery_logo_light.png"
             logo_d = self.assets_dir / "faery_logo_dark.png"
             if logo_l.exists():
                 l_img = Image.open(logo_l)
                 d_img = Image.open(logo_d) if logo_d.exists() else l_img
-                self.logo_header = ctk.CTkImage(light_image=l_img, dark_image=d_img, size=(168, 49))
-                self.logo_dialog = ctk.CTkImage(light_image=l_img, dark_image=d_img, size=(142, 41))
+                self.logo_header = ctk.CTkImage(light_image=l_img, dark_image=d_img, size=(138, 40))
+                self.logo_dialog = ctk.CTkImage(light_image=l_img, dark_image=d_img, size=(138, 40))
 
             bf_l = self.assets_dir / "faery_butterfly_light.png"
             bf_d = self.assets_dir / "faery_butterfly_dark.png"
@@ -164,7 +168,7 @@ class BrandAssets:
                 self.icon_butterfly = ctk.CTkImage(
                     light_image=Image.open(bf_l),
                     dark_image=Image.open(bf_d) if bf_d.exists() else Image.open(bf_l),
-                    size=(28, 28),
+                    size=(20, 20),
                 )
 
             mt_l = self.assets_dir / "faery_mortar_light.png"
@@ -173,7 +177,7 @@ class BrandAssets:
                 self.icon_mortar = ctk.CTkImage(
                     light_image=Image.open(mt_l),
                     dark_image=Image.open(mt_d) if mt_d.exists() else Image.open(mt_l),
-                    size=(22, 22),
+                    size=(18, 18),
                 )
 
             sp_l = self.assets_dir / "faery_sprig_light.png"
@@ -182,7 +186,7 @@ class BrandAssets:
                 self.icon_sprig = ctk.CTkImage(
                     light_image=Image.open(sp_l),
                     dark_image=Image.open(sp_d) if sp_d.exists() else Image.open(sp_l),
-                    size=(22, 22),
+                    size=(18, 18),
                 )
         except Exception:
             pass
@@ -1091,21 +1095,24 @@ class FaeryTranscriberApp(ctk.CTk):
         self.selected_history_id: Optional[str] = None
 
         # Window configuration & Faery Good Icon
-        self.title(f"{APP_NAME} v{APP_VERSION}  •  Whimsy is Power")
-        self.geometry("1020x840")
-        self.minsize(880, 720)
+        self.title(f"{APP_NAME}  —  Whimsy is Power")
+        self.geometry("1040x820")
+        self.minsize(900, 700)
         self.configure(fg_color=FAERY_LAVENDER_BG)
         self.brand.apply_window_icon(self)
 
         ctk.set_appearance_mode(self.config.appearance_mode)
 
-        # Faery Good Editorial Typography (Fraunces / Georgia serif + clean sans body)
-        self.font_serif_title = ctk.CTkFont(family="Georgia", size=18, weight="bold")
-        self.font_serif_card = ctk.CTkFont(family="Georgia", size=14, weight="bold")
+        # Apple-style Typography + Faery Good Editorial Serif
+        sys_sans = ".AppleSystemUIFont" if sys.platform == "darwin" else "Segoe UI"
+        self.font_serif_title = ctk.CTkFont(family="Georgia", size=17, weight="bold")
+        self.font_serif_card = ctk.CTkFont(family="Georgia", size=13, weight="bold")
         self.font_serif_italic = ctk.CTkFont(family="Georgia", size=12, slant="italic")
-        self.font_body = ctk.CTkFont(size=12)
-        self.font_body_bold = ctk.CTkFont(size=12, weight="bold")
-        self.font_small = ctk.CTkFont(size=11)
+        self.font_body = ctk.CTkFont(family=sys_sans, size=12)
+        self.font_body_bold = ctk.CTkFont(family=sys_sans, size=12, weight="bold")
+        self.font_small = ctk.CTkFont(family=sys_sans, size=11)
+        self.font_section_caps = ctk.CTkFont(family=sys_sans, size=10, weight="bold")
+        self.font_editor = ctk.CTkFont(family=sys_sans, size=13)
 
         # Intercept window close to clean up gracefully
         self.protocol("WM_DELETE_WINDOW", self._on_window_close)
@@ -1120,303 +1127,383 @@ class FaeryTranscriberApp(ctk.CTk):
         self._refresh_history_list()
 
     def _build_ui(self) -> None:
-        """Constructs the responsive Faery Good branded tabbed interface."""
+        """Constructs an Apple Sonoma-inspired Unified Toolbar and Bento workspace with Faery Good whimsy."""
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
         # -------------------------------------------------------------------
-        # Top Header Bar (Official Faery Good Watercolor Mascot + Cursive Logo)
+        # Apple Unified Top Toolbar (Brand Left | Segmented Nav Center | Pills Right)
         # -------------------------------------------------------------------
         header_frame = ctk.CTkFrame(
             self,
             corner_radius=16,
             fg_color=FAERY_CREAM_CARD,
-            border_width=2,
+            border_width=1,
             border_color=FAERY_CARD_BORDER,
         )
-        header_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(14, 6))
+        header_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(14, 10))
         header_frame.grid_columnconfigure(0, weight=1)
+        header_frame.grid_columnconfigure(1, weight=0)
+        header_frame.grid_columnconfigure(2, weight=1)
 
-        title_subframe = ctk.CTkFrame(header_frame, fg_color="transparent")
-        title_subframe.grid(row=0, column=0, sticky="w", padx=16, pady=10)
-
-        brand_top_row = ctk.CTkFrame(title_subframe, fg_color="transparent")
-        brand_top_row.pack(anchor="w")
+        # Left: Faery Good Watercolor Mascot + Cursive Wordmark + Subtle Tagline
+        brand_cluster = ctk.CTkFrame(header_frame, fg_color="transparent")
+        brand_cluster.grid(row=0, column=0, sticky="w", padx=16, pady=8)
 
         if self.brand.mascot_header is not None:
-            mascot_lbl = ctk.CTkLabel(brand_top_row, text="", image=self.brand.mascot_header)
+            mascot_lbl = ctk.CTkLabel(brand_cluster, text="", image=self.brand.mascot_header)
             mascot_lbl.pack(side="left", padx=(0, 10))
 
+        brand_text_col = ctk.CTkFrame(brand_cluster, fg_color="transparent")
+        brand_text_col.pack(side="left")
+
+        logo_row = ctk.CTkFrame(brand_text_col, fg_color="transparent")
+        logo_row.pack(anchor="w")
+
         if self.brand.logo_header is not None:
-            logo_lbl = ctk.CTkLabel(brand_top_row, text="", image=self.brand.logo_header)
-            logo_lbl.pack(side="left", padx=(0, 12))
+            logo_lbl = ctk.CTkLabel(logo_row, text="", image=self.brand.logo_header)
+            logo_lbl.pack(side="left", padx=(0, 8))
         else:
             title_label = ctk.CTkLabel(
-                brand_top_row,
-                text="✨ Faery Good",
-                font=ctk.CTkFont(family="Georgia", size=24, weight="bold"),
+                logo_row,
+                text="Faery Good",
+                font=ctk.CTkFont(family="Georgia", size=20, weight="bold"),
                 text_color=FAERY_PURPLE,
             )
-            title_label.pack(side="left", padx=(0, 12))
+            title_label.pack(side="left", padx=(0, 8))
 
         studio_badge = ctk.CTkLabel(
-            brand_top_row,
-            text="  ✨ TRANSCRIBER STUDIO  ",
-            font=ctk.CTkFont(size=11, weight="bold"),
-            fg_color=FAERY_ROSE_CARD,
-            text_color=FAERY_PURPLE,
-            corner_radius=10,
-            height=24,
+            logo_row,
+            text="STUDIO",
+            font=self.font_section_caps,
+            fg_color=FAERY_SECONDARY_BTN,
+            text_color=FAERY_SECONDARY_TEXT,
+            corner_radius=8,
+            padx=8,
+            pady=1,
         )
-        studio_badge.pack(side="left", pady=(4, 0))
+        studio_badge.pack(side="left", pady=(2, 0))
 
         subtitle_label = ctk.CTkLabel(
-            title_subframe,
-            text=BRAND_TAGLINE,
-            font=ctk.CTkFont(size=12, weight="bold"),
+            brand_text_col,
+            text="Whimsy is Power  ·  On-Device Reels & YouTube Transcriber",
+            font=self.font_small,
             text_color=FAERY_TEXT_MUTED,
         )
-        subtitle_label.pack(anchor="w", pady=(3, 0))
+        subtitle_label.pack(anchor="w")
 
-        theme_subframe = ctk.CTkFrame(header_frame, fg_color="transparent")
-        theme_subframe.grid(row=0, column=1, sticky="e", padx=16, pady=10)
+        # Center: Native macOS Sonoma-Style Segmented Mode Switcher
+        nav_container = ctk.CTkFrame(header_frame, fg_color="transparent")
+        nav_container.grid(row=0, column=1, padx=12, pady=8)
+
+        # Workspace Container (Holds Tab Views without an ugly outer Tabview border box)
+        self.workspace_container = ctk.CTkFrame(self, fg_color="transparent")
+        self.workspace_container.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 16))
+        self.workspace_container.grid_columnconfigure(0, weight=1)
+        self.workspace_container.grid_rowconfigure(0, weight=1)
+
+        self.tab_transcribe = ctk.CTkFrame(self.workspace_container, fg_color="transparent")
+        self.tab_history = ctk.CTkFrame(self.workspace_container, fg_color="transparent")
+
+        class _UnifiedTabController:
+            """Apple-style unified toolbar tab controller compatible with CTkTabview API."""
+            def __init__(self, parent_app: FaeryTranscriberApp, seg_parent: ctk.CTkFrame):
+                self._app = parent_app
+                self._tabs = {
+                    "🎙️ Transcribe": parent_app.tab_transcribe,
+                    "📜 History": parent_app.tab_history,
+                }
+                self._current = "🎙️ Transcribe"
+                self.segmented = ctk.CTkSegmentedButton(
+                    seg_parent,
+                    values=["🎙️ Transcribe", "📜 History"],
+                    command=self.set,
+                    height=34,
+                    corner_radius=17,
+                    font=parent_app.font_body_bold,
+                    fg_color=FAERY_SEGMENT_TRACK,
+                    selected_color=FAERY_PURPLE,
+                    selected_hover_color=FAERY_PURPLE_HOVER,
+                    unselected_color=FAERY_SEGMENT_TRACK,
+                    unselected_hover_color=FAERY_SEGMENT_HOVER,
+                    text_color=("#FCF4ED", "#FCF4ED"),
+                    text_color_disabled=FAERY_TEXT_MUTED,
+                )
+                self.segmented.set("🎙️ Transcribe")
+                self.segmented.pack()
+                parent_app.tab_transcribe.grid(row=0, column=0, sticky="nsew")
+
+            def set(self, name: str) -> None:
+                if name not in self._tabs:
+                    return
+                self._current = name
+                if self.segmented.get() != name:
+                    self.segmented.set(name)
+                for k, frame in self._tabs.items():
+                    if k == name:
+                        frame.grid(row=0, column=0, sticky="nsew")
+                    else:
+                        frame.grid_forget()
+
+            def get(self) -> str:
+                return self._current
+
+        self.tabview = _UnifiedTabController(self, nav_container)
+
+        # Right: Minimal Borderless Apple Tinted Toolbar Pills
+        toolbar_right = ctk.CTkFrame(header_frame, fg_color="transparent")
+        toolbar_right.grid(row=0, column=2, sticky="e", padx=16, pady=8)
 
         site_btn = ctk.CTkButton(
-            theme_subframe,
+            toolbar_right,
             text="🦋 FaeryGood.com",
-            width=128,
+            width=126,
             height=30,
             corner_radius=15,
             fg_color=FAERY_ROSE_CARD,
             hover_color=FAERY_SECONDARY_HOVER,
             text_color=FAERY_SECONDARY_TEXT,
-            border_width=1,
-            border_color=FAERY_ACTIVE_BORDER,
-            font=ctk.CTkFont(size=12, weight="bold"),
+            border_width=0,
+            font=self.font_body_bold,
             command=lambda: webbrowser.open(BRAND_WEBSITE),
         )
-        site_btn.pack(side="left", padx=(0, 8))
+        site_btn.pack(side="left", padx=(0, 6))
 
         guide_btn = ctk.CTkButton(
-            theme_subframe,
-            text="❓ Guide",
-            width=82,
+            toolbar_right,
+            text="✨ Guide",
+            width=76,
             height=30,
             corner_radius=15,
             fg_color=FAERY_SECONDARY_BTN,
             hover_color=FAERY_SECONDARY_HOVER,
             text_color=FAERY_SECONDARY_TEXT,
-            border_width=1,
-            border_color=FAERY_ACTIVE_BORDER,
-            font=ctk.CTkFont(size=12, weight="bold"),
+            border_width=0,
+            font=self.font_body_bold,
             command=self._show_quick_guide,
         )
-        guide_btn.pack(side="left", padx=(0, 10))
-
-        theme_label = ctk.CTkLabel(
-            theme_subframe,
-            text="Theme:",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color=FAERY_TEXT_PRIMARY,
-        )
-        theme_label.pack(side="left", padx=(0, 6))
+        guide_btn.pack(side="left", padx=(0, 6))
 
         self.theme_menu = ctk.CTkOptionMenu(
-            theme_subframe,
+            toolbar_right,
             values=["Light", "Dark", "System"],
             command=self._on_theme_changed,
-            width=95,
+            width=92,
             height=30,
             corner_radius=15,
-            fg_color=FAERY_PURPLE,
-            button_color=FAERY_PURPLE_HOVER,
+            font=self.font_body_bold,
+            fg_color=FAERY_SECONDARY_BTN,
+            button_color=FAERY_SECONDARY_HOVER,
+            button_hover_color=FAERY_CARD_BORDER,
+            text_color=FAERY_SECONDARY_TEXT,
         )
         self.theme_menu.set(self.config.appearance_mode)
         self.theme_menu.pack(side="left")
-
-        # -------------------------------------------------------------------
-        # Main Tabview (Transcribe & History)
-        # -------------------------------------------------------------------
-        self.tabview = ctk.CTkTabview(
-            self,
-            corner_radius=16,
-            fg_color=FAERY_ROSE_CARD,
-            border_width=2,
-            border_color=FAERY_CARD_BORDER,
-            segmented_button_fg_color=("#9E7BBF", "#2B1B3F"),
-            segmented_button_selected_color=FAERY_PURPLE,
-            segmented_button_selected_hover_color=FAERY_PURPLE_HOVER,
-            segmented_button_unselected_color=("#9E7BBF", "#2B1B3F"),
-            segmented_button_unselected_hover_color=("#8A63B0", "#3D2759"),
-            text_color=("#FCF4ED", "#FCF4ED"),
-        )
-        self.tabview.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 14))
-
-        self.tab_transcribe = self.tabview.add("🎙️ Transcribe")
-        self.tab_history = self.tabview.add("📜 History")
 
         self._build_transcribe_tab()
         self._build_history_tab()
 
     # -----------------------------------------------------------------------
-    # Tab 1: Transcribe Studio Layout
+    # Tab 1: Transcribe Studio Layout (Apple Bento Inspector + Notes Canvas)
     # -----------------------------------------------------------------------
     def _build_transcribe_tab(self) -> None:
         tab = self.tab_transcribe
         tab.grid_columnconfigure(0, weight=1)
-        tab.grid_rowconfigure(2, weight=1)  # Card 3 (Textbox) expands dynamically
+        tab.grid_rowconfigure(1, weight=1)  # Row 1 (Editor Canvas) expands maximally
 
-        # Card 1: Input Media File
+        # -------------------------------------------------------------------
+        # Row 0: 2-Column Apple Bento Inspector (Media Source | Studio Settings)
+        # -------------------------------------------------------------------
+        bento_row = ctk.CTkFrame(tab, fg_color="transparent")
+        bento_row.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        bento_row.grid_columnconfigure(0, weight=5)
+        bento_row.grid_columnconfigure(1, weight=6)
+
+        # Left Bento Card: Source Media
         file_card = ctk.CTkFrame(
-            tab,
-            corner_radius=14,
+            bento_row,
+            corner_radius=16,
             fg_color=FAERY_CREAM_CARD,
-            border_width=2,
+            border_width=1,
             border_color=FAERY_CARD_BORDER,
         )
-        file_card.grid(row=0, column=0, sticky="ew", padx=8, pady=(6, 5))
-        file_card.grid_columnconfigure(1, weight=1)
+        file_card.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+        file_card.grid_columnconfigure(0, weight=1)
 
-        self.select_file_btn = ctk.CTkButton(
-            file_card,
-            text="📁 Select Video / Audio File",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color=FAERY_PURPLE,
-            hover_color=FAERY_PURPLE_HOVER,
-            text_color=("#FCF4ED", "#FCF4ED"),
-            corner_radius=18,
-            command=self._on_select_file_clicked,
-            width=220,
-            height=38,
-        )
-        self.select_file_btn.grid(row=0, column=0, padx=14, pady=12, sticky="w")
+        file_top_bar = ctk.CTkFrame(file_card, fg_color="transparent")
+        file_top_bar.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 4))
+        file_top_bar.grid_columnconfigure(0, weight=1)
 
-        file_info_frame = ctk.CTkFrame(file_card, fg_color="transparent")
-        file_info_frame.grid(row=0, column=1, padx=(4, 14), pady=8, sticky="ew")
-
-        file_title_row = ctk.CTkFrame(file_info_frame, fg_color="transparent")
-        file_title_row.pack(fill="x")
-
-        if self.brand.icon_butterfly is not None:
-            bf_lbl = ctk.CTkLabel(file_title_row, text="", image=self.brand.icon_butterfly)
-            bf_lbl.pack(side="left", padx=(0, 8))
-
-        self.file_name_label = ctk.CTkLabel(
-            file_title_row,
-            text="No media file selected yet — click to choose a Reel or YouTube video",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            text_color=FAERY_TEXT_PRIMARY,
-            anchor="w",
-        )
-        self.file_name_label.pack(side="left", fill="x", expand=True)
-
-        self.file_meta_label = ctk.CTkLabel(
-            file_info_frame,
-            text="✨ Supports Instagram Reels & YouTube clips (.mp4, .mov, .m4a, .mp3, .wav, .mkv)",
-            font=ctk.CTkFont(size=11),
+        source_badge = ctk.CTkLabel(
+            file_top_bar,
+            text="  SOURCE MEDIA" if self.brand.icon_butterfly else "🦋 SOURCE MEDIA",
+            image=self.brand.icon_butterfly,
+            compound="left",
+            font=self.font_section_caps,
             text_color=FAERY_TEXT_MUTED,
             anchor="w",
         )
-        self.file_meta_label.pack(fill="x", pady=(2, 0))
+        source_badge.grid(row=0, column=0, sticky="w")
 
-        # Card 2: Apothecary Studio Settings
+        self.select_file_btn = ctk.CTkButton(
+            file_top_bar,
+            text="Select Video or Audio…",
+            font=self.font_body_bold,
+            fg_color=FAERY_PURPLE,
+            hover_color=FAERY_PURPLE_HOVER,
+            text_color=("#FCF4ED", "#FCF4ED"),
+            corner_radius=15,
+            command=self._on_select_file_clicked,
+            width=168,
+            height=30,
+        )
+        self.select_file_btn.grid(row=0, column=1, sticky="e")
+
+        self.file_name_label = ctk.CTkLabel(
+            file_card,
+            text="No clip selected yet",
+            font=self.font_serif_card,
+            text_color=FAERY_TEXT_PRIMARY,
+            anchor="w",
+        )
+        self.file_name_label.grid(row=1, column=0, sticky="ew", padx=16, pady=(2, 1))
+
+        self.file_meta_label = ctk.CTkLabel(
+            file_card,
+            text="Supports Instagram Reels & YouTube videos (.mp4, .mov, .m4a, .mp3, .wav)",
+            font=self.font_small,
+            text_color=FAERY_TEXT_MUTED,
+            anchor="w",
+        )
+        self.file_meta_label.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 12))
+
+        # Right Bento Card: Studio Preferences (Apple Settings Group Style)
         settings_card = ctk.CTkFrame(
-            tab,
-            corner_radius=14,
+            bento_row,
+            corner_radius=16,
             fg_color=FAERY_CREAM_CARD,
-            border_width=2,
+            border_width=1,
             border_color=FAERY_CARD_BORDER,
         )
-        settings_card.grid(row=1, column=0, sticky="ew", padx=8, pady=5)
+        settings_card.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
         settings_card.grid_columnconfigure(1, weight=1)
 
+        # Row 1: Transcription Engine
         model_label = ctk.CTkLabel(
             settings_card,
-            text="  Transcription Model:" if self.brand.icon_mortar else "🌿 Transcription Model:",
+            text="  Accuracy Engine" if self.brand.icon_mortar else "🌿 Accuracy Engine",
             image=self.brand.icon_mortar,
             compound="left",
-            font=ctk.CTkFont(size=12, weight="bold"),
+            font=self.font_body_bold,
             text_color=FAERY_TEXT_PRIMARY,
         )
-        model_label.grid(row=0, column=0, padx=(14, 8), pady=(10, 6), sticky="w")
+        model_label.grid(row=0, column=0, padx=(16, 12), pady=(13, 8), sticky="w")
 
         self.model_dropdown = ctk.CTkOptionMenu(
             settings_card,
             values=list(MODEL_DISPLAY_NAMES.keys()),
             command=self._on_model_changed,
-            height=30,
-            width=290,
-            corner_radius=15,
-            fg_color=FAERY_PURPLE,
-            button_color=FAERY_PURPLE_HOVER,
+            height=28,
+            width=265,
+            corner_radius=14,
+            font=self.font_small,
+            fg_color=FAERY_SECONDARY_BTN,
+            button_color=FAERY_SECONDARY_HOVER,
+            button_hover_color=FAERY_CARD_BORDER,
+            text_color=FAERY_SECONDARY_TEXT,
         )
         self.model_dropdown.set(self.config.model_selection)
-        self.model_dropdown.grid(row=0, column=1, padx=(0, 14), pady=(10, 6), sticky="w")
+        self.model_dropdown.grid(row=0, column=1, padx=(0, 16), pady=(13, 8), sticky="e")
 
+        # 1px Apple Settings Divider
+        divider = ctk.CTkFrame(settings_card, height=1, fg_color=FAERY_DIVIDER)
+        divider.grid(row=1, column=0, columnspan=2, sticky="ew", padx=16)
+
+        # Row 2: Output Folder
         out_label = ctk.CTkLabel(
             settings_card,
-            text="  Save Transcripts To:" if self.brand.icon_sprig else "🌸 Save Transcripts To:",
+            text="  Output Folder" if self.brand.icon_sprig else "🌸 Output Folder",
             image=self.brand.icon_sprig,
             compound="left",
-            font=ctk.CTkFont(size=12, weight="bold"),
+            font=self.font_body_bold,
             text_color=FAERY_TEXT_PRIMARY,
         )
-        out_label.grid(row=1, column=0, padx=(14, 8), pady=(0, 10), sticky="w")
+        out_label.grid(row=2, column=0, padx=(16, 12), pady=(8, 12), sticky="w")
 
         out_path_subframe = ctk.CTkFrame(settings_card, fg_color="transparent")
-        out_path_subframe.grid(row=1, column=1, padx=(0, 14), pady=(0, 10), sticky="ew")
+        out_path_subframe.grid(row=2, column=1, padx=(0, 16), pady=(8, 12), sticky="ew")
         out_path_subframe.grid_columnconfigure(0, weight=1)
 
         self.out_path_entry = ctk.CTkEntry(
             out_path_subframe,
-            height=30,
-            corner_radius=12,
-            font=ctk.CTkFont(size=11),
+            height=28,
+            corner_radius=10,
+            border_width=1,
+            border_color=FAERY_DIVIDER,
+            fg_color=FAERY_LAVENDER_BG,
+            text_color=FAERY_TEXT_MUTED,
+            font=self.font_small,
         )
-        self.out_path_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self.out_path_entry.grid(row=0, column=0, sticky="ew", padx=(0, 6))
         self.out_path_entry.configure(state="readonly")
 
         self.change_folder_btn = ctk.CTkButton(
             out_path_subframe,
-            text="Change Folder",
-            width=120,
-            height=30,
-            corner_radius=15,
+            text="Change…",
+            width=84,
+            height=28,
+            corner_radius=14,
             fg_color=FAERY_SECONDARY_BTN,
             hover_color=FAERY_SECONDARY_HOVER,
             text_color=FAERY_SECONDARY_TEXT,
-            border_width=1,
-            border_color=FAERY_ACTIVE_BORDER,
-            font=ctk.CTkFont(size=12, weight="bold"),
+            border_width=0,
+            font=self.font_body_bold,
             command=self._on_change_folder_clicked,
         )
         self.change_folder_btn.grid(row=0, column=1, sticky="e")
 
-        # Card 3: Results Display
+        # -------------------------------------------------------------------
+        # Row 1: Distraction-Free Document Canvas (Apple Notes / Pages Style)
+        # -------------------------------------------------------------------
         result_card = ctk.CTkFrame(
             tab,
-            corner_radius=14,
+            corner_radius=16,
             fg_color=FAERY_CREAM_CARD,
-            border_width=2,
+            border_width=1,
             border_color=FAERY_CARD_BORDER,
         )
-        result_card.grid(row=2, column=0, sticky="nsew", padx=8, pady=5)
+        result_card.grid(row=1, column=0, sticky="nsew", pady=(0, 10))
         result_card.grid_columnconfigure(0, weight=1)
-        result_card.grid_rowconfigure(1, weight=1)
+        result_card.grid_rowconfigure(2, weight=1)
 
         result_header = ctk.CTkFrame(result_card, fg_color="transparent")
-        result_header.grid(row=0, column=0, sticky="ew", padx=14, pady=(10, 4))
+        result_header.grid(row=0, column=0, sticky="ew", padx=18, pady=(12, 8))
         result_header.grid_columnconfigure(0, weight=0)
         result_header.grid_columnconfigure(1, weight=1)
         result_header.grid_columnconfigure(2, weight=0)
 
+        title_left = ctk.CTkFrame(result_header, fg_color="transparent")
+        title_left.grid(row=0, column=0, sticky="w")
+
         result_title = ctk.CTkLabel(
-            result_header,
-            text="✨ Transcription Result:",
-            font=ctk.CTkFont(family="Georgia", size=14, weight="bold"),
+            title_left,
+            text="✨ Transcript Canvas",
+            font=self.font_serif_card,
             text_color=FAERY_TEXT_PRIMARY,
         )
-        result_title.grid(row=0, column=0, sticky="w", padx=(0, 12))
+        result_title.pack(side="left", padx=(0, 10))
+
+        self.stats_badge = ctk.CTkLabel(
+            title_left,
+            text="0 words  |  0 characters",
+            font=self.font_small,
+            fg_color=FAERY_ROSE_CARD,
+            text_color=FAERY_SECONDARY_TEXT,
+            corner_radius=10,
+            padx=10,
+            pady=2,
+        )
+        self.stats_badge.pack(side="left")
 
         self.view_selector = ctk.CTkSegmentedButton(
             result_header,
@@ -1424,170 +1511,169 @@ class FaeryTranscriberApp(ctk.CTk):
             command=self._on_view_mode_changed,
             height=30,
             corner_radius=15,
-            fg_color=("#9E7BBF", "#2B1B3F"),
+            font=self.font_small,
+            fg_color=FAERY_SEGMENT_TRACK,
             selected_color=FAERY_PURPLE,
             selected_hover_color=FAERY_PURPLE_HOVER,
-            unselected_color=("#9E7BBF", "#2B1B3F"),
-            unselected_hover_color=("#8A63B0", "#3D2759"),
+            unselected_color=FAERY_SEGMENT_TRACK,
+            unselected_hover_color=FAERY_SEGMENT_HOVER,
             text_color=("#FCF4ED", "#FCF4ED"),
         )
         self.view_selector.set("📄 Clean Paragraphs")
-        self.view_selector.grid(row=0, column=1, sticky="w")
+        self.view_selector.grid(row=0, column=2, sticky="e")
 
-        self.stats_badge = ctk.CTkLabel(
-            result_header,
-            text="0 words  |  0 characters",
-            font=ctk.CTkFont(size=11, weight="bold"),
-            fg_color=FAERY_ROSE_CARD,
-            text_color=FAERY_SECONDARY_TEXT,
-            corner_radius=10,
-            padx=10,
-            pady=2,
-        )
-        self.stats_badge.grid(row=0, column=2, sticky="e")
+        canvas_divider = ctk.CTkFrame(result_card, height=1, fg_color=FAERY_DIVIDER)
+        canvas_divider.grid(row=1, column=0, sticky="ew", padx=18)
 
         self.textbox = ctk.CTkTextbox(
             result_card,
             wrap="word",
-            font=ctk.CTkFont(size=13),
+            font=self.font_editor,
             corner_radius=12,
-            border_width=2,
-            border_color=FAERY_CARD_BORDER,
-            fg_color=("#FFFFFF", "#1B1128"),
+            border_width=0,
+            fg_color=FAERY_CREAM_CARD,
             text_color=FAERY_TEXT_PRIMARY,
         )
-        self.textbox.grid(row=1, column=0, sticky="nsew", padx=14, pady=(4, 10))
+        self.textbox.grid(row=2, column=0, sticky="nsew", padx=14, pady=(6, 12))
         self.textbox.bind("<KeyRelease>", self._update_stats)
 
-        # Card 4: Action Controls & Status Bar
+        # -------------------------------------------------------------------
+        # Row 2: Unified Floating Dock Bar (Primary Action + Status + Exports)
+        # -------------------------------------------------------------------
         action_card = ctk.CTkFrame(
             tab,
-            corner_radius=14,
+            corner_radius=16,
             fg_color=FAERY_CREAM_CARD,
-            border_width=2,
+            border_width=1,
             border_color=FAERY_CARD_BORDER,
         )
-        action_card.grid(row=3, column=0, sticky="ew", padx=8, pady=(5, 8))
+        action_card.grid(row=2, column=0, sticky="ew")
         action_card.grid_columnconfigure(1, weight=1)
 
-        btn_subframe = ctk.CTkFrame(action_card, fg_color="transparent")
-        btn_subframe.grid(row=0, column=0, columnspan=2, sticky="ew", padx=14, pady=(10, 6))
+        # Left Dock: Primary Generate + Cancel
+        left_dock = ctk.CTkFrame(action_card, fg_color="transparent")
+        left_dock.grid(row=0, column=0, padx=(14, 10), pady=12, sticky="w")
 
         self.generate_btn = ctk.CTkButton(
-            btn_subframe,
+            left_dock,
             text="✨ Generate Transcript",
             font=ctk.CTkFont(size=13, weight="bold"),
             fg_color=FAERY_PURPLE,
             hover_color=FAERY_PURPLE_HOVER,
             text_color=("#FCF4ED", "#FCF4ED"),
-            corner_radius=18,
+            corner_radius=19,
             command=self._on_generate_clicked,
-            width=190,
-            height=36,
+            width=192,
+            height=38,
         )
-        self.generate_btn.pack(side="left", padx=(0, 8))
+        self.generate_btn.pack(side="left", padx=(0, 6))
 
         self.cancel_btn = ctk.CTkButton(
-            btn_subframe,
-            text="⏹ Cancel",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=("#E5D9F2", "#2E1F42"),
-            hover_color=("#D4C2EB", "#3E2A59"),
+            left_dock,
+            text="Cancel",
+            font=self.font_body_bold,
+            fg_color=FAERY_SEGMENT_TRACK,
+            hover_color=FAERY_SEGMENT_HOVER,
             text_color=FAERY_TEXT_MUTED,
-            corner_radius=18,
+            corner_radius=19,
             command=self._on_cancel_clicked,
-            width=88,
-            height=36,
+            width=74,
+            height=38,
             state="disabled",
         )
-        self.cancel_btn.pack(side="left", padx=(0, 14))
+        self.cancel_btn.pack(side="left")
 
-        self.copy_btn = ctk.CTkButton(
-            btn_subframe,
-            text="📋 Copy to Clipboard",
-            width=145,
-            height=36,
-            corner_radius=18,
-            fg_color=FAERY_SECONDARY_BTN,
-            hover_color=FAERY_SECONDARY_HOVER,
-            text_color=FAERY_SECONDARY_TEXT,
-            border_width=1,
-            border_color=FAERY_ACTIVE_BORDER,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            command=self._on_copy_clicked,
-        )
-        self.copy_btn.pack(side="left", padx=(0, 8))
-        self.default_btn_fg = self.copy_btn.cget("fg_color")
-
-        self.save_txt_btn = ctk.CTkButton(
-            btn_subframe,
-            text="💾 Save as .txt",
-            width=112,
-            height=36,
-            corner_radius=18,
-            fg_color=FAERY_SECONDARY_BTN,
-            hover_color=FAERY_SECONDARY_HOVER,
-            text_color=FAERY_SECONDARY_TEXT,
-            border_width=1,
-            border_color=FAERY_ACTIVE_BORDER,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            command=self._on_save_txt_clicked,
-        )
-        self.save_txt_btn.pack(side="left", padx=(0, 8))
-
-        self.save_md_btn = ctk.CTkButton(
-            btn_subframe,
-            text="📝 Save as .md",
-            width=112,
-            height=36,
-            corner_radius=18,
-            fg_color=FAERY_SECONDARY_BTN,
-            hover_color=FAERY_SECONDARY_HOVER,
-            text_color=FAERY_SECONDARY_TEXT,
-            border_width=1,
-            border_color=FAERY_ACTIVE_BORDER,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            command=self._on_save_md_clicked,
-        )
-        self.save_md_btn.pack(side="left", padx=(0, 8))
-
-        self.open_folder_btn = ctk.CTkButton(
-            btn_subframe,
-            text="📂 Open Output Folder",
-            width=155,
-            height=36,
-            corner_radius=18,
-            fg_color=FAERY_ROSE_CARD,
-            hover_color=FAERY_SECONDARY_HOVER,
-            text_color=FAERY_SECONDARY_TEXT,
-            border_width=1,
-            border_color=FAERY_ACTIVE_BORDER,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            command=self._on_open_folder_clicked,
-        )
-        self.open_folder_btn.pack(side="right")
-
-        self.progress_bar = ctk.CTkProgressBar(
-            action_card,
-            height=9,
-            corner_radius=10,
-            fg_color=("#E2D4FC", "#35224C"),
-            progress_color=FAERY_PURPLE,
-        )
-        self.progress_bar.grid(row=1, column=0, columnspan=2, sticky="ew", padx=14, pady=(2, 4))
-        self.progress_bar.set(0.0)
+        # Center Dock: Live Status & Sleek 6px Apple Progress Bar
+        center_dock = ctk.CTkFrame(action_card, fg_color="transparent")
+        center_dock.grid(row=0, column=1, padx=8, pady=10, sticky="ew")
+        center_dock.grid_columnconfigure(0, weight=1)
 
         self.status_label = ctk.CTkLabel(
-            action_card,
-            text="✨ Ready for Faery Magic — Select a video or audio clip to begin.",
-            font=ctk.CTkFont(size=12, weight="bold"),
+            center_dock,
+            text="✨ Ready — Select a video or audio clip to begin.",
+            font=self.font_small,
             text_color=FAERY_TEXT_MUTED,
             anchor="w",
         )
-        self.status_label.grid(row=2, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 8))
+        self.status_label.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+
+        self.progress_bar = ctk.CTkProgressBar(
+            center_dock,
+            height=6,
+            corner_radius=3,
+            fg_color=FAERY_SEGMENT_TRACK,
+            progress_color=FAERY_PURPLE,
+        )
+        self.progress_bar.grid(row=1, column=0, sticky="ew")
+        self.progress_bar.set(0.0)
+
+        # Right Dock: Borderless Apple-Tinted Export Pills
+        right_dock = ctk.CTkFrame(action_card, fg_color="transparent")
+        right_dock.grid(row=0, column=2, padx=(10, 14), pady=12, sticky="e")
+
+        self.copy_btn = ctk.CTkButton(
+            right_dock,
+            text="📋 Copy to Clipboard",
+            width=142,
+            height=34,
+            corner_radius=17,
+            fg_color=FAERY_SECONDARY_BTN,
+            hover_color=FAERY_SECONDARY_HOVER,
+            text_color=FAERY_SECONDARY_TEXT,
+            border_width=0,
+            font=self.font_body_bold,
+            command=self._on_copy_clicked,
+        )
+        self.copy_btn.pack(side="left", padx=(0, 6))
+        self.default_btn_fg = self.copy_btn.cget("fg_color")
+
+        self.save_txt_btn = ctk.CTkButton(
+            right_dock,
+            text="💾 .txt",
+            width=72,
+            height=34,
+            corner_radius=17,
+            fg_color=FAERY_SECONDARY_BTN,
+            hover_color=FAERY_SECONDARY_HOVER,
+            text_color=FAERY_SECONDARY_TEXT,
+            border_width=0,
+            font=self.font_body_bold,
+            command=self._on_save_txt_clicked,
+        )
+        self.save_txt_btn.pack(side="left", padx=(0, 6))
+
+        self.save_md_btn = ctk.CTkButton(
+            right_dock,
+            text="📝 .md",
+            width=72,
+            height=34,
+            corner_radius=17,
+            fg_color=FAERY_SECONDARY_BTN,
+            hover_color=FAERY_SECONDARY_HOVER,
+            text_color=FAERY_SECONDARY_TEXT,
+            border_width=0,
+            font=self.font_body_bold,
+            command=self._on_save_md_clicked,
+        )
+        self.save_md_btn.pack(side="left", padx=(0, 6))
+
+        self.open_folder_btn = ctk.CTkButton(
+            right_dock,
+            text="📂 Folder",
+            width=88,
+            height=34,
+            corner_radius=17,
+            fg_color=FAERY_ROSE_CARD,
+            hover_color=FAERY_SECONDARY_HOVER,
+            text_color=FAERY_SECONDARY_TEXT,
+            border_width=0,
+            font=self.font_body_bold,
+            command=self._on_open_folder_clicked,
+        )
+        self.open_folder_btn.pack(side="left")
 
     # -----------------------------------------------------------------------
-    # Tab 2: Historical Transcripts Manager (CRUD)
+    # Tab 2: Historical Transcripts Manager (Apple Split-View Sidebar + Canvas)
     # -----------------------------------------------------------------------
     def _build_history_tab(self) -> None:
         tab = self.tab_history
@@ -1595,54 +1681,57 @@ class FaeryTranscriberApp(ctk.CTk):
         tab.grid_columnconfigure(1, weight=1)
         tab.grid_rowconfigure(0, weight=1)
 
-        # Left Column: Search & Transcript List
+        # Left Column: Apple Sidebar for Search & Transcript List
         left_panel = ctk.CTkFrame(
             tab,
-            width=340,
-            corner_radius=14,
+            width=320,
+            corner_radius=16,
             fg_color=FAERY_CREAM_CARD,
-            border_width=2,
+            border_width=1,
             border_color=FAERY_CARD_BORDER,
         )
-        left_panel.grid(row=0, column=0, sticky="nsew", padx=(8, 5), pady=8)
+        left_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
         left_panel.grid_columnconfigure(0, weight=1)
         left_panel.grid_rowconfigure(2, weight=1)
 
-        # Search Bar
+        # Spotlight-style Rounded Search Input
         self.history_search_entry = ctk.CTkEntry(
             left_panel,
-            placeholder_text="🔍 Search Faery Good transcripts...",
+            placeholder_text="🔍 Search transcripts…",
             height=34,
-            corner_radius=14,
+            corner_radius=17,
+            border_width=1,
+            border_color=FAERY_DIVIDER,
+            fg_color=FAERY_LAVENDER_BG,
+            font=self.font_body,
         )
-        self.history_search_entry.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 6))
+        self.history_search_entry.grid(row=0, column=0, sticky="ew", padx=14, pady=(14, 8))
         self.history_search_entry.bind("<KeyRelease>", lambda e: self._refresh_history_list(self.history_search_entry.get().strip()))
 
-        # Subheader with refresh & count
+        # Subheader with count & borderless refresh pill
         subhead = ctk.CTkFrame(left_panel, fg_color="transparent")
-        subhead.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 6))
+        subhead.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 6))
         subhead.grid_columnconfigure(0, weight=1)
 
         self.history_count_label = ctk.CTkLabel(
             subhead,
             text="0 Transcripts",
-            font=ctk.CTkFont(size=11, weight="bold"),
+            font=self.font_section_caps,
             text_color=FAERY_TEXT_MUTED,
         )
         self.history_count_label.grid(row=0, column=0, sticky="w")
 
         self.history_refresh_btn = ctk.CTkButton(
             subhead,
-            text="🔄 Refresh",
-            width=80,
-            height=26,
-            corner_radius=13,
+            text="↻ Refresh",
+            width=74,
+            height=24,
+            corner_radius=12,
             fg_color=FAERY_SECONDARY_BTN,
             hover_color=FAERY_SECONDARY_HOVER,
             text_color=FAERY_SECONDARY_TEXT,
-            border_width=1,
-            border_color=FAERY_ACTIVE_BORDER,
-            font=ctk.CTkFont(size=11, weight="bold"),
+            border_width=0,
+            font=self.font_small,
             command=lambda: self._refresh_history_list(self.history_search_entry.get().strip()),
         )
         self.history_refresh_btn.grid(row=0, column=1, sticky="e")
@@ -1650,33 +1739,33 @@ class FaeryTranscriberApp(ctk.CTk):
         # Scrollable list for records
         self.history_list_frame = ctk.CTkScrollableFrame(
             left_panel,
-            corner_radius=10,
+            corner_radius=12,
             fg_color=FAERY_LAVENDER_BG,
         )
-        self.history_list_frame.grid(row=2, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        self.history_list_frame.grid(row=2, column=0, sticky="nsew", padx=12, pady=(0, 12))
         self.history_list_frame.grid_columnconfigure(0, weight=1)
 
-        # Right Column: Details, Preview & CRUD Actions
+        # Right Column: Document Reader, Inspector & CRUD Actions
         right_panel = ctk.CTkFrame(
             tab,
-            corner_radius=14,
+            corner_radius=16,
             fg_color=FAERY_CREAM_CARD,
-            border_width=2,
+            border_width=1,
             border_color=FAERY_CARD_BORDER,
         )
-        right_panel.grid(row=0, column=1, sticky="nsew", padx=(5, 8), pady=8)
+        right_panel.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
         right_panel.grid_columnconfigure(0, weight=1)
-        right_panel.grid_rowconfigure(2, weight=1)
+        right_panel.grid_rowconfigure(3, weight=1)
 
         # Details Header
         self.history_detail_header = ctk.CTkFrame(right_panel, fg_color="transparent")
-        self.history_detail_header.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 4))
+        self.history_detail_header.grid(row=0, column=0, sticky="ew", padx=20, pady=(14, 6))
         self.history_detail_header.grid_columnconfigure(0, weight=1)
 
         self.history_title_label = ctk.CTkLabel(
             self.history_detail_header,
             text="✨ Select a transcript from your library",
-            font=ctk.CTkFont(family="Georgia", size=17, weight="bold"),
+            font=self.font_serif_title,
             text_color=FAERY_TEXT_PRIMARY,
             anchor="w",
         )
@@ -1685,15 +1774,15 @@ class FaeryTranscriberApp(ctk.CTk):
         self.history_meta_label = ctk.CTkLabel(
             self.history_detail_header,
             text="Choose any archived Faery Good transcript to view, edit, rename, or export.",
-            font=ctk.CTkFont(size=11),
+            font=self.font_small,
             text_color=FAERY_TEXT_MUTED,
             anchor="w",
         )
-        self.history_meta_label.grid(row=1, column=0, sticky="w")
+        self.history_meta_label.grid(row=1, column=0, sticky="w", pady=(2, 0))
 
         # Action Toolbar (CRUD Operations)
         crud_toolbar = ctk.CTkFrame(right_panel, fg_color="transparent")
-        crud_toolbar.grid(row=1, column=0, sticky="ew", padx=16, pady=4)
+        crud_toolbar.grid(row=1, column=0, sticky="ew", padx=20, pady=(4, 10))
         crud_toolbar.grid_columnconfigure(1, weight=1)
 
         left_crud = ctk.CTkFrame(crud_toolbar, fg_color="transparent")
@@ -1703,13 +1792,14 @@ class FaeryTranscriberApp(ctk.CTk):
             left_crud,
             values=["📄 Clean Paragraphs", "⏱️ Timecoded", "📝 Markdown"],
             command=self._on_history_view_mode_changed,
-            height=28,
-            corner_radius=14,
-            fg_color=("#9E7BBF", "#2B1B3F"),
+            height=30,
+            corner_radius=15,
+            font=self.font_small,
+            fg_color=FAERY_SEGMENT_TRACK,
             selected_color=FAERY_PURPLE,
             selected_hover_color=FAERY_PURPLE_HOVER,
-            unselected_color=("#9E7BBF", "#2B1B3F"),
-            unselected_hover_color=("#8A63B0", "#3D2759"),
+            unselected_color=FAERY_SEGMENT_TRACK,
+            unselected_hover_color=FAERY_SEGMENT_HOVER,
             text_color=("#FCF4ED", "#FCF4ED"),
         )
         self.history_view_selector.set("📄 Clean Paragraphs")
@@ -1721,14 +1811,14 @@ class FaeryTranscriberApp(ctk.CTk):
         self.h_rename_btn = ctk.CTkButton(
             right_crud,
             text="✏️ Rename",
-            width=85,
-            height=28,
-            corner_radius=14,
+            width=84,
+            height=30,
+            corner_radius=15,
             fg_color=FAERY_SECONDARY_BTN,
             hover_color=FAERY_SECONDARY_HOVER,
             text_color=FAERY_SECONDARY_TEXT,
-            border_width=1,
-            border_color=FAERY_ACTIVE_BORDER,
+            border_width=0,
+            font=self.font_body_bold,
             command=self._on_history_rename_clicked,
             state="disabled",
         )
@@ -1737,14 +1827,14 @@ class FaeryTranscriberApp(ctk.CTk):
         self.h_save_btn = ctk.CTkButton(
             right_crud,
             text="💾 Save Edits",
-            width=92,
-            height=28,
-            corner_radius=14,
+            width=94,
+            height=30,
+            corner_radius=15,
             fg_color=FAERY_SECONDARY_BTN,
             hover_color=FAERY_SECONDARY_HOVER,
             text_color=FAERY_SECONDARY_TEXT,
-            border_width=1,
-            border_color=FAERY_ACTIVE_BORDER,
+            border_width=0,
+            font=self.font_body_bold,
             command=self._on_history_save_edits_clicked,
             state="disabled",
         )
@@ -1754,13 +1844,13 @@ class FaeryTranscriberApp(ctk.CTk):
             right_crud,
             text="📋 Copy",
             width=72,
-            height=28,
-            corner_radius=14,
+            height=30,
+            corner_radius=15,
             fg_color=FAERY_SECONDARY_BTN,
             hover_color=FAERY_SECONDARY_HOVER,
             text_color=FAERY_SECONDARY_TEXT,
-            border_width=1,
-            border_color=FAERY_ACTIVE_BORDER,
+            border_width=0,
+            font=self.font_body_bold,
             command=self._on_history_copy_clicked,
             state="disabled",
         )
@@ -1768,15 +1858,15 @@ class FaeryTranscriberApp(ctk.CTk):
 
         self.h_open_file_btn = ctk.CTkButton(
             right_crud,
-            text="↗️ Open App",
-            width=88,
-            height=28,
-            corner_radius=14,
+            text="↗️ Open",
+            width=76,
+            height=30,
+            corner_radius=15,
             fg_color=FAERY_SECONDARY_BTN,
             hover_color=FAERY_SECONDARY_HOVER,
             text_color=FAERY_SECONDARY_TEXT,
-            border_width=1,
-            border_color=FAERY_ACTIVE_BORDER,
+            border_width=0,
+            font=self.font_body_bold,
             command=self._on_history_open_file_clicked,
             state="disabled",
         )
@@ -1786,28 +1876,32 @@ class FaeryTranscriberApp(ctk.CTk):
             right_crud,
             text="🗑️ Delete",
             width=78,
-            height=28,
-            corner_radius=14,
+            height=30,
+            corner_radius=15,
             fg_color=FAERY_BERRY_RED,
             hover_color=FAERY_BERRY_HOVER,
-            text_color=("#FCF4ED", "#FCF4ED"),
+            text_color=FAERY_BERRY_TEXT,
+            border_width=0,
+            font=self.font_body_bold,
             command=self._on_history_delete_clicked,
             state="disabled",
         )
         self.h_delete_btn.pack(side="left")
 
-        # Preview & Edit Textbox
+        h_divider = ctk.CTkFrame(right_panel, height=1, fg_color=FAERY_DIVIDER)
+        h_divider.grid(row=2, column=0, sticky="ew", padx=20)
+
+        # Preview & Edit Textbox (Borderless Apple Document Canvas)
         self.history_textbox = ctk.CTkTextbox(
             right_panel,
             wrap="word",
-            font=ctk.CTkFont(size=13),
+            font=self.font_editor,
             corner_radius=12,
-            border_width=2,
-            border_color=FAERY_CARD_BORDER,
-            fg_color=("#FFFFFF", "#1B1128"),
+            border_width=0,
+            fg_color=FAERY_CREAM_CARD,
             text_color=FAERY_TEXT_PRIMARY,
         )
-        self.history_textbox.grid(row=2, column=0, sticky="nsew", padx=16, pady=(4, 12))
+        self.history_textbox.grid(row=3, column=0, sticky="nsew", padx=16, pady=(6, 14))
 
     # -----------------------------------------------------------------------
     # GUI Event Handlers (Transcribe Tab)
