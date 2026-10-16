@@ -2705,19 +2705,22 @@ class FaeryTranscriberApp(ctk.CTk):
                 pass
             return "break"
 
-        for mod in ("Command", "Control"):
+        is_mac = sys.platform == "darwin"
+        mods = ["Command"] if is_mac else ["Control"]
+
+        for mod in mods:
             # Text editing bindings across all text and entry widgets
-            self.bind_class("Text", f"<{mod}-a>", select_all_text)
-            self.bind_class("Entry", f"<{mod}-a>", select_all_entry)
+            self.bind_class("Text", f"<{mod}-Key-a>", select_all_text)
+            self.bind_class("Entry", f"<{mod}-Key-a>", select_all_entry)
 
             # Application actions
-            self.bind(f"<{mod}-o>", lambda e: self._on_select_file_clicked())
-            self.bind(f"<{mod}-O>", lambda e: self._on_open_folder_clicked())
-            self.bind(f"<{mod}-s>", lambda e: self._on_quick_save())
-            self.bind(f"<{mod}-Return>", lambda e: self._on_generate_clicked())
-            self.bind(f"<{mod}-1>", lambda e: self.tabview.set("🎙️ Transcribe"))
-            self.bind(f"<{mod}-2>", lambda e: self.tabview.set("📜 History"))
-            self.bind(f"<{mod}-q>", lambda e: self._on_window_close())
+            self.bind(f"<{mod}-Key-o>", lambda e: self._on_select_file_clicked())
+            self.bind(f"<{mod}-Key-O>", lambda e: self._on_open_folder_clicked())
+            self.bind(f"<{mod}-Key-s>", lambda e: self._on_quick_save())
+            self.bind(f"<{mod}-Key-Return>", lambda e: self._on_generate_clicked())
+            self.bind(f"<{mod}-Key-1>", lambda e: self.tabview.set("🎙️ Transcribe"))
+            self.bind(f"<{mod}-Key-2>", lambda e: self.tabview.set("📜 History"))
+            self.bind(f"<{mod}-Key-q>", lambda e: self._on_window_close())
 
     def _on_quick_save(self) -> None:
         """Handles Command+S / Ctrl+S intelligently based on the active tab."""
