@@ -491,6 +491,7 @@ class ConfigManager:
             "appearance_mode": "Light",
             "last_media_directory": "",
             "cookie_browser": DEFAULT_COOKIE_BROWSER,
+            "last_update_check": 0.0,
         }
         self.load()
 
@@ -556,6 +557,18 @@ class ConfigManager:
     @cookie_browser.setter
     def cookie_browser(self, browser_label: str) -> None:
         self.data["cookie_browser"] = browser_label
+        self.save()
+
+    @property
+    def last_update_check(self) -> float:
+        try:
+            return float(self.data.get("last_update_check", 0.0))
+        except (ValueError, TypeError):
+            return 0.0
+
+    @last_update_check.setter
+    def last_update_check(self, ts: float) -> None:
+        self.data["last_update_check"] = float(ts)
         self.save()
 
     def get_initial_media_dir(self) -> Path:
@@ -1181,6 +1194,179 @@ class OnlineMediaFetcher:
 
 
 # ---------------------------------------------------------------------------
+# Weekly Auto-Update Check & Pull Subsystem
+# ---------------------------------------------------------------------------
+class AutoUpdater:
+    """
+    Checks and pulls updates from the GitHub repository once a week (7 days)
+    only when the application is launched, provided internet is available.
+    Runs non-blocking on a background daemon thread so application startup
+    is instantaneous.
+    """
+
+    WEEK_IN_SECONDS = 7 * 24 * 3600  # 604,800 seconds
+
+    @staticmethod
+    def is_internet_available(timeout: float = 2.0) -> bool:
+        """Quickly checks for internet connectivity without blocking."""
+        import socket
+        try:
+            # Connect to Cloudflare or Google public DNS on port 53 (extremely fast, low overhead)
+            socket.create_connection(("1.1.1.1", 53), timeout=timeout).close()
+            return True
+        except OSError:
+            try:
+                socket.create_connection(("8.8.8.8", 53), timeout=timeout).close()
+                return True
+            except OSError:
+                return False
+
+    @classmethod
+    def should_check_update(cls, config: ConfigManager, force: bool = False) -> bool:
+        """Determines if at least 7 days have passed since the last update check."""
+        if force:
+            return True
+        now = time.time()
+        last_check = config.last_update_check
+        # If last_check is in the future or older than 7 days, trigger check
+        return (now - last_check) >= cls.WEEK_IN_SECONDS
+
+    @classmethod
+    def run_update_check_and_pull(
+        cls,
+        config: ConfigManager,
+        project_dir: Path,
+        force: bool = False,
+    ) -> Tuple[bool, str]:
+        """
+        Checks git remote and performs a fast-forward pull if updates exist.
+        Returns (updated, message).
+        """
+        # 1. Verify this is a git repository
+        git_dir = project_dir / ".git"
+        if not git_dir.exists():
+            return False, "Not running from a git repository clone."
+
+        # 2. Check if 7 days have elapsed
+        if not cls.should_check_update(config, force=force):
+            return False, "Update checked recently (within 7 days)."
+
+        # 3. Check internet availability
+        if not cls.is_internet_available():
+            return False, "Internet connection not available."
+
+        # Record this check timestamp
+        config.last_update_check = time.time()
+
+        creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+
+        try:
+            # Check for uncommitted local changes to avoid merge conflicts
+            status_proc = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=str(project_dir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                creationflags=creation_flags,
+                timeout=10,
+            )
+            if status_proc.returncode != 0:
+                return False, f"Git status failed: {status_proc.stderr.strip()}"
+
+            has_local_changes = bool(status_proc.stdout.strip())
+
+            # Fetch origin main
+            fetch_proc = subprocess.run(
+                ["git", "fetch", "--quiet", "origin", "main"],
+                cwd=str(project_dir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                creationflags=creation_flags,
+                timeout=20,
+            )
+            if fetch_proc.returncode != 0:
+                return False, f"Git fetch failed: {fetch_proc.stderr.strip()}"
+
+            # Check local HEAD vs remote origin/main
+            rev_local = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=str(project_dir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                creationflags=creation_flags,
+                timeout=5,
+            ).stdout.strip()
+
+            rev_remote = subprocess.run(
+                ["git", "rev-parse", "origin/main"],
+                cwd=str(project_dir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                creationflags=creation_flags,
+                timeout=5,
+            ).stdout.strip()
+
+            if not rev_local or not rev_remote:
+                return False, "Could not determine local or remote commit hashes."
+
+            if rev_local == rev_remote:
+                return False, "Faery Good Transcriber is already up to date!"
+
+            # Remote has new commits! Pull them
+            if has_local_changes:
+                # Stash local modifications, pull, and reapply cleanly
+                subprocess.run(
+                    ["git", "stash"],
+                    cwd=str(project_dir),
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=creation_flags,
+                    timeout=10,
+                )
+                pull_proc = subprocess.run(
+                    ["git", "pull", "--ff-only", "origin", "main"],
+                    cwd=str(project_dir),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    creationflags=creation_flags,
+                    timeout=30,
+                )
+                subprocess.run(
+                    ["git", "stash", "pop"],
+                    cwd=str(project_dir),
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=creation_flags,
+                    timeout=10,
+                )
+            else:
+                pull_proc = subprocess.run(
+                    ["git", "pull", "--ff-only", "origin", "main"],
+                    cwd=str(project_dir),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    creationflags=creation_flags,
+                    timeout=30,
+                )
+
+            if pull_proc.returncode == 0:
+                return True, "✨ Updated successfully to the latest version from GitHub!"
+            else:
+                return False, f"Git pull failed: {pull_proc.stderr.strip()}"
+
+        except subprocess.TimeoutExpired:
+            return False, "Update check timed out."
+        except Exception as err:
+            return False, f"Update check error: {err}"
+
+
+# ---------------------------------------------------------------------------
 # Background Transcription Worker & Hygiene Context Manager
 # ---------------------------------------------------------------------------
 class TranscriptionEngine:
@@ -1645,6 +1831,34 @@ class FaeryTranscriberApp(ctk.CTk):
         # Initial data sync
         self._update_output_dir_label()
         self._refresh_history_list()
+
+        # Check and pull updates once a week if internet is available (non-blocking)
+        self._trigger_background_update_check()
+
+    def _trigger_background_update_check(self, force: bool = False) -> None:
+        """Launches a non-blocking background daemon thread to check and pull GitHub updates."""
+        def _worker():
+            project_dir = Path(__file__).resolve().parent
+            updated, msg = AutoUpdater.run_update_check_and_pull(
+                config=self.config,
+                project_dir=project_dir,
+                force=force,
+            )
+            if updated:
+                # Notify user gently in status label and chime
+                def _notify():
+                    self.status_label.configure(
+                        text="✨ Faery Good Transcriber updated to the latest version from GitHub!"
+                    )
+                    play_completion_sound()
+                self.after(0, _notify)
+            elif force:
+                def _show_info():
+                    messagebox.showinfo("Update Check", msg)
+                self.after(0, _show_info)
+
+        thread = threading.Thread(target=_worker, daemon=True)
+        thread.start()
 
     def _build_ui(self) -> None:
         """Constructs an Apple Sonoma-inspired Unified Toolbar and Bento workspace with Faery Good whimsy."""
@@ -3580,6 +3794,10 @@ class FaeryTranscriberApp(ctk.CTk):
 
         # Help Menu
         help_menu = tk.Menu(menu_bar, tearoff=0)
+        help_menu.add_command(
+            label="Check for Updates from GitHub...",
+            command=lambda: self._trigger_background_update_check(force=True),
+        )
         help_menu.add_command(
             label="Quick Start Guide for Creators",
             command=self._show_quick_guide,

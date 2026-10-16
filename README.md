@@ -19,6 +19,7 @@ A delightful, 100% private, on-device desktop transcription studio and historica
   * **Full-Text Spoken Search:** Search not only by title or date, but **by any word spoken in the audio**!
   * **Speech Snippet Previews:** Results highlight the exact sentence from the transcript where the spoken words were detected (e.g. `💬 "...save for the muffled rhythm of rain..."`).
   * Spotlight-style search bar with real-time filtering and an instant `✕` clear pill button.
+* **Automatic Weekly Updates (Only on Launch):** When the application is launched, it checks whether 7 days have elapsed since the last check. If an internet connection is available, it automatically pulls updates from the GitHub repository (`main` branch) in the background. You can also trigger an immediate check at any time from **Help → Check for Updates from GitHub...**.
 * **Overwrite Protection:** If you transcribe the same clip a second time, the studio will ask whether you want to overwrite the old file or create a numbered duplicate (`_1`).
 * **Bespoke Faery Good Aesthetics:** Custom-tailored to [FaeryGood.com](https://faerygood.com/) with watercolor fairy icons, whimsical butterfly accents, soft lavender backgrounds, and apothecary cream cards.
 
@@ -238,8 +239,8 @@ If you want **Faery Good Transcriber** installed in your `/Applications` folder 
 #### Q: An Instagram or Facebook reel says "Login required". How do I transcribe it?
 > In the **`🔐 Social Login`** dropdown under preferences, select the browser where you are logged into your account (e.g. `Safari (macOS)` or `Chrome`), then click **`Generate Transcript`** again. The app will securely use your browser's existing session cookies without needing you to enter your password.
 
-#### Q: Can I edit transcripts after they are generated?
-> Yes! Click the **`📜 History`** tab, select the transcript, edit the text directly in the reader canvas, and click **`💾 Save Edits`** (or press `⌘S`).
+#### Q: How do automatic updates work?
+> **Only when you launch the app**, it checks if 7 days have passed since the previous check. If your computer is connected to the internet, it runs a background check to pull any new updates from GitHub (`origin main`). It will never interrupt you with constant checks while you are using the app. You can also manually check anytime via **Help → Check for Updates from GitHub...**.
 
 ---
 
@@ -261,7 +262,7 @@ TranscriptionEngine/
 │   └── faery_good_theme.json   # CustomTkinter theme matching FaeryGood.com
 ├── requirements.txt            # Production dependencies
 ├── FaeryTranscriber.spec       # PyInstaller standalone packaging specification
-├── test_app.py                 # Automated unit test suite (16 tests)
+├── test_app.py                 # Automated unit test suite (18 tests)
 ├── Run_Mac.command             # 1-Click double-clickable Mac launcher
 ├── Build_Mac_App.command       # 1-Click standalone .app bundle builder
 ├── Create_Mac_DMG.command      # 1-Click drag-and-drop .dmg installer creator

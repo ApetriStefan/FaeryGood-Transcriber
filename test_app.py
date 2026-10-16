@@ -14,6 +14,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -488,6 +489,32 @@ class TestOnlineMediaFetcherAndHygiene(unittest.TestCase):
                 self.assertEqual(len(captured_temp_files), 1)
                 self.assertFalse(captured_temp_files[0].exists(), "Temporary downloaded audio must be deleted!")
                 self.assertFalse(captured_temp_files[0].parent.exists(), "Temporary directory must be deleted!")
+
+
+class TestAutoUpdater(unittest.TestCase):
+    def test_should_check_update_logic(self):
+        from app import AutoUpdater, ConfigManager
+        with tempfile.TemporaryDirectory() as td:
+            cfg = ConfigManager(config_path=Path(td) / "cfg.json")
+            # Fresh config defaults to 0.0 -> should check
+            self.assertTrue(AutoUpdater.should_check_update(cfg))
+
+            # Set last_check to right now -> should NOT check (within 7 days)
+            cfg.last_update_check = time.time()
+            self.assertFalse(AutoUpdater.should_check_update(cfg))
+
+            # Force check -> should always return True
+            self.assertTrue(AutoUpdater.should_check_update(cfg, force=True))
+
+            # Set last_check to 8 days ago -> should check
+            cfg.last_update_check = time.time() - (8 * 24 * 3600)
+            self.assertTrue(AutoUpdater.should_check_update(cfg))
+
+    def test_is_internet_available(self):
+        from app import AutoUpdater
+        # Should return a boolean without crashing or hanging
+        res = AutoUpdater.is_internet_available(timeout=1.0)
+        self.assertIsInstance(res, bool)
 
 
 if __name__ == "__main__":
