@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
 
 # Virtual Environments
 .venv/
@@ -38,7 +39,6 @@ scratch/
 
 # OS & Editor generated files
 .DS_Store
-.DS_Store?
 ._*
 .Spotlight-V100
 .Trashes
@@ -47,3 +47,19 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
+
+# BMad Method & Kipi Agent (excluded from Git VC)
+_bmad/
+_bmad-output/
+.agent/
+.agents/
+.claude/
+.github/agents/
+knowledge/private_knowledge/**
+!knowledge/private_knowledge/
+!knowledge/private_knowledge/**/
+!knowledge/private_knowledge/**/.gitkeep
+user-data/
+
+
+

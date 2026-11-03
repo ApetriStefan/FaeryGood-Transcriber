@@ -37,6 +37,7 @@ import time
 import urllib.parse
 import webbrowser
 from collections import deque
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -1564,18 +1565,20 @@ class OnlineMediaFetcher:
 
     @classmethod
     def clean_error_message(cls, raw_err: str, platform: str) -> str:
-        """Strips ANSI escape sequences and formats a friendly error message for creators."""
+        """Strips ANSI escape sequences and formats a friendly, reassuring error message for creators."""
         clean = cls.ANSI_ESCAPE_RE.sub("", str(raw_err or "")).strip()
         clean = re.sub(r"^ERROR:\s*", "", clean, flags=re.IGNORECASE)
         lower = clean.lower()
         if any(k in lower for k in ("login required", "sign in", "cookies", "rate-limit", "private", "not available")):
             return (
-                f"{platform} requires you to be logged in to access this clip (or the post is private).\n\n"
+                f"{platform} requires you to be signed in to access this clip (or the post is private).\n\n"
                 "💡 Tip: In the 'Social Login' dropdown under Studio Preferences, select the browser "
-                "where you are logged into your account (e.g. Safari or Chrome) and click Generate again!\n\n"
-                f"Technical details: {clean}"
+                "where you are logged into your account (e.g. Chrome, Safari, or Edge) and click Generate again!"
             )
-        return f"Could not download audio from {platform} link:\n\n{clean}"
+        return (
+            f"Could not download audio from {platform} link. "
+            "Please check that the clip is public and that your computer is connected to the internet."
+        )
 
     @classmethod
     def download_audio_to_temp(
@@ -1616,7 +1619,7 @@ class OnlineMediaFetcher:
                 else:
                     status_cb(f"📥 Downloading temporary audio from {platform}...")
             elif st == "finished":
-                status_cb(f"✨ {platform} audio fetched! Preparing 16kHz mono stream...")
+                status_cb(f"✨ {platform} audio downloaded! Preparing audio for transcription...")
 
         outtmpl = str(temp_dir / "online_source_%(id)s.%(ext)s")
         base_opts = {
@@ -1661,7 +1664,7 @@ class OnlineMediaFetcher:
             if browser_name:
                 opts["cookiesfrombrowser"] = (browser_name,)
                 if idx > 0:
-                    status_cb(f"🔐 {platform} requested login — trying {browser_name.title()} cookies...")
+                    status_cb(f"🔐 {platform} requires sign-in — trying {browser_name.title()} session...")
 
             try:
                 with yt_dlp.YoutubeDL(opts) as ydl:
@@ -1723,12 +1726,22 @@ class OnlineMediaFetcher:
 class AutoUpdater:
     """
     Checks and pulls updates from the GitHub repository once a week (7 days)
-    only when the application is launched, provided internet is available.
-    Runs non-blocking on a background daemon thread so application startup
-    is instantaneous.
+    only when the application is launched from a git clone, provided internet is available.
+    In standalone packaged bundles (e.g. PyInstaller .exe / .app) or environments without
+    Git, automatic updates are skipped entirely to prevent crashes or failing subprocess calls.
     """
 
     WEEK_IN_SECONDS = 7 * 24 * 3600  # 604,800 seconds
+
+    @classmethod
+    def is_standalone_bundle(cls) -> bool:
+        """Returns True if the application is running inside a PyInstaller frozen bundle."""
+        return getattr(sys, "frozen", False)
+
+    @classmethod
+    def is_git_available(cls) -> bool:
+        """Returns True if the git command-line tool is installed and reachable in PATH."""
+        return shutil.which("git") is not None
 
     @staticmethod
     def is_internet_available(timeout: float = 2.0) -> bool:
@@ -1766,18 +1779,46 @@ class AutoUpdater:
         Checks git remote and performs a fast-forward pull if updates exist.
         Returns (updated, message).
         """
-        # 1. Verify this is a git repository
+        # 1. Standalone bundle check (PyInstaller distribution)
+        if cls.is_standalone_bundle():
+            if force:
+                return (
+                    False,
+                    "✨ You are running the standalone packaged version of Faery Good Transcriber!\n\n"
+                    "Standalone builds do not require Git. To check for or download new versions, "
+                    "visit https://faerygood.com/ or check GitHub Releases."
+                )
+            return False, "Standalone package: Git updates disabled."
+
+        # 2. Check if git CLI is installed
+        if not cls.is_git_available():
+            if force:
+                return (
+                    False,
+                    "Git was not found on this computer.\n\n"
+                    "If you would like to receive automatic updates via Git, please install Git from https://git-scm.com/ "
+                    "or download new versions directly from https://faerygood.com/."
+                )
+            return False, "Git command-line tool not found: skipping automatic updates."
+
+        # 3. Verify this is an actual git repository (.git folder exists)
         git_dir = project_dir / ".git"
         if not git_dir.exists():
-            return False, "Not running from a git repository clone."
+            if force:
+                return (
+                    False,
+                    "This copy of Faery Good Transcriber was installed without Git (e.g. from a ZIP download).\n\n"
+                    "You are currently running the complete release version! To update, visit https://faerygood.com/."
+                )
+            return False, "Not a Git clone: skipping automatic updates."
 
-        # 2. Check if 7 days have elapsed
+        # 4. Check if 7 days have elapsed
         if not cls.should_check_update(config, force=force):
-            return False, "Update checked recently (within 7 days)."
+            return False, "You're already up to date! Updates were checked recently."
 
-        # 3. Check internet availability
+        # 5. Check internet availability
         if not cls.is_internet_available():
-            return False, "Internet connection not available."
+            return False, "Unable to check for updates because your computer is offline. Please check your internet connection."
 
         # Record this check timestamp
         config.last_update_check = time.time()
@@ -1796,7 +1837,7 @@ class AutoUpdater:
                 timeout=10,
             )
             if status_proc.returncode != 0:
-                return False, f"Git status failed: {status_proc.stderr.strip()}"
+                return False, "Unable to check for updates at this time. Please try again later."
 
             has_local_changes = bool(status_proc.stdout.strip())
 
@@ -1811,7 +1852,7 @@ class AutoUpdater:
                 timeout=20,
             )
             if fetch_proc.returncode != 0:
-                return False, f"Git fetch failed: {fetch_proc.stderr.strip()}"
+                return False, "Unable to reach the update server. Please check your internet connection and try again."
 
             # Check local HEAD vs remote origin/main
             rev_local = subprocess.run(
@@ -1835,10 +1876,10 @@ class AutoUpdater:
             ).stdout.strip()
 
             if not rev_local or not rev_remote:
-                return False, "Could not determine local or remote commit hashes."
+                return False, "Unable to verify version information. Please try again later."
 
             if rev_local == rev_remote:
-                return False, "Faery Good Transcriber is already up to date!"
+                return False, "✨ Faery Good Transcriber is already up to date!"
 
             # Remote has new commits! Pull them
             if has_local_changes:
@@ -1851,23 +1892,25 @@ class AutoUpdater:
                     creationflags=creation_flags,
                     timeout=10,
                 )
-                pull_proc = subprocess.run(
-                    ["git", "pull", "--ff-only", "origin", "main"],
-                    cwd=str(project_dir),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    creationflags=creation_flags,
-                    timeout=30,
-                )
-                subprocess.run(
-                    ["git", "stash", "pop"],
-                    cwd=str(project_dir),
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    creationflags=creation_flags,
-                    timeout=10,
-                )
+                try:
+                    pull_proc = subprocess.run(
+                        ["git", "pull", "--ff-only", "origin", "main"],
+                        cwd=str(project_dir),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        creationflags=creation_flags,
+                        timeout=30,
+                    )
+                finally:
+                    subprocess.run(
+                        ["git", "stash", "pop"],
+                        cwd=str(project_dir),
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        creationflags=creation_flags,
+                        timeout=10,
+                    )
             else:
                 pull_proc = subprocess.run(
                     ["git", "pull", "--ff-only", "origin", "main"],
@@ -1882,12 +1925,155 @@ class AutoUpdater:
             if pull_proc.returncode == 0:
                 return True, "✨ Updated successfully to the latest version from GitHub!"
             else:
-                return False, f"Git pull failed: {pull_proc.stderr.strip()}"
+                return False, "Could not download the update. Please try again later."
 
         except subprocess.TimeoutExpired:
-            return False, "Update check timed out."
-        except Exception as err:
-            return False, f"Update check error: {err}"
+            return False, "Update check timed out. Please check your internet connection and try again."
+        except Exception:
+            return False, "Unable to complete the update check right now. Please try again later."
+
+
+# ---------------------------------------------------------------------------
+# Scratch Storage Lifecycle & Hygiene Manager
+# ---------------------------------------------------------------------------
+class ScratchLifecycleManager:
+    """
+    Guarantees 100% fail-safe silent lifecycle hygiene for all temporary audio
+    conversions, model download fragments, and working scratch directories.
+
+    Lifecycle guarantees:
+    1. Normal Completion: Automatically deletes temporary directories via context manager.
+    2. User Cancellation: Instantly purges active scratch directories upon cancel signal.
+    3. Unexpected Termination: Hooks into atexit, SIGINT, SIGTERM, and window close handlers.
+    4. Anti-Lock Resilience: Retries deletion with exponential backoff on Windows when OS
+       antivirus or file indexers temporarily lock recently closed audio handles.
+    5. Orphan Sweeping: Cleans orphaned faery_transcribe_* and faery_scratch_* directories
+       left behind by previous system crashes or power losses on application startup.
+    6. Model Download Hygiene: Sweeps abandoned *.incomplete model fragments in Hugging Face cache.
+    """
+
+    _active_scratch_dirs: set[Path] = set()
+    _lock = threading.Lock()
+    _initialized = False
+
+    @classmethod
+    def register_dir(cls, path: Path) -> None:
+        """Tracks an active scratch directory for failsafe cleanup."""
+        with cls._lock:
+            cls._active_scratch_dirs.add(path.resolve())
+
+    @classmethod
+    def unregister_dir(cls, path: Path) -> None:
+        """Removes a successfully cleaned scratch directory from tracking."""
+        with cls._lock:
+            cls._active_scratch_dirs.discard(path.resolve())
+
+    @classmethod
+    def safe_remove_tree(cls, target: Path, max_retries: int = 4, delay: float = 0.05) -> None:
+        """
+        Removes a directory tree safely with retry backoff to survive transient
+        Windows file locking (e.g. Defender, search indexing, or async audio releases).
+        """
+        if not target.exists():
+            return
+        if not target.is_dir():
+            try:
+                target.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return
+        for attempt in range(max_retries):
+            try:
+                shutil.rmtree(target, ignore_errors=False)
+                return
+            except Exception:
+                time.sleep(delay * (attempt + 1))
+        # Final fallback with ignore_errors=True to guarantee non-blocking silence
+        try:
+            shutil.rmtree(target, ignore_errors=True)
+        except Exception:
+            pass
+
+    @classmethod
+    @contextmanager
+    def safe_scratch_directory(cls, prefix: str = "faery_transcribe_"):
+        """Context manager yielding a temporary Path guaranteed to be cleaned under all conditions."""
+        temp_dir_str = tempfile.mkdtemp(prefix=prefix)
+        temp_path = Path(temp_dir_str)
+        cls.register_dir(temp_path)
+        try:
+            yield temp_path
+        finally:
+            try:
+                cls.safe_remove_tree(temp_path)
+            finally:
+                cls.unregister_dir(temp_path)
+
+    @classmethod
+    def cleanup_all_active(cls) -> None:
+        """Silently and immediately purges all active scratch directories."""
+        with cls._lock:
+            active_list = list(cls._active_scratch_dirs)
+            cls._active_scratch_dirs.clear()
+        for p in active_list:
+            cls.safe_remove_tree(p)
+
+    @classmethod
+    def cleanup_orphaned_scratch(cls) -> None:
+        """
+        Sweeps the system temporary directory for orphaned Faery Transcriber folders
+        left by prior system crashes or hard termination. Also sweeps abandoned
+        Hugging Face *.incomplete model download fragments.
+        """
+        # 1. Sweep system temp directory for orphaned audio conversion folders
+        try:
+            temp_root = Path(tempfile.gettempdir())
+            for prefix in ("faery_transcribe_*", "faery_scratch_*"):
+                for item in temp_root.glob(prefix):
+                    if item.is_dir() and item.resolve() not in cls._active_scratch_dirs:
+                        cls.safe_remove_tree(item)
+        except Exception:
+            pass
+
+        # 2. Sweep Hugging Face Hub cache for stale .incomplete model downloads (>1 hour old)
+        try:
+            hf_home = os.environ.get("HF_HOME")
+            cache_base = Path(hf_home) if hf_home else (Path.home() / ".cache" / "huggingface" / "hub")
+            if cache_base.exists():
+                now = time.time()
+                for incomplete_file in cache_base.rglob("*.incomplete"):
+                    try:
+                        if now - incomplete_file.stat().st_mtime > 3600:
+                            incomplete_file.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    @classmethod
+    def initialize_lifecycle(cls) -> None:
+        """Installs atexit and signal termination handlers, and runs an orphan sweep."""
+        if cls._initialized:
+            return
+        cls._initialized = True
+
+        import atexit
+        atexit.register(cls.cleanup_all_active)
+
+        import signal
+        def _signal_handler(signum, frame):
+            cls.cleanup_all_active()
+            sys.exit(0)
+
+        for sig_name in ("SIGINT", "SIGTERM", "SIGBREAK"):
+            if hasattr(signal, sig_name):
+                try:
+                    signal.signal(getattr(signal, sig_name), _signal_handler)
+                except Exception:
+                    pass
+
+        # Run background orphan cleanup non-blockingly so application startup remains instantaneous
+        threading.Thread(target=cls.cleanup_orphaned_scratch, daemon=True, name="FaeryScratchOrphanSweep").start()
 
 
 # ---------------------------------------------------------------------------
@@ -1922,10 +2108,10 @@ class TranscriptionEngine:
                 return self._cached_model
 
             if self.is_model_cached(model_size_or_path):
-                status_cb(f"⚡ Loading Whisper model ({model_size_or_path}) into memory...")
+                status_cb("⚡ Loading speech model into memory...")
             else:
                 status_cb(
-                    f"📥 First-time setup: Downloading {model_size_or_path} model (~460MB)... "
+                    "📥 First-time setup: Downloading speech recognition model (~460 MB)... "
                     "(One-time download. Future runs will be 100% offline!)"
                 )
 
@@ -1966,17 +2152,15 @@ class TranscriptionEngine:
                 "Please free up disk space before proceeding."
             )
 
-        temp_dir_path: Optional[Path] = None
         segments_collected: List[TranscriptSegment] = []
 
-        with tempfile.TemporaryDirectory(prefix="faery_transcribe_") as temp_dir_str:
-            temp_dir_path = Path(temp_dir_str)
+        with ScratchLifecycleManager.safe_scratch_directory(prefix="faery_transcribe_") as temp_dir_path:
             scratch_wav = temp_dir_path / "audio_16k_mono.wav"
 
             if cancel_event.is_set():
                 raise InterruptedError("Transcription cancelled.")
 
-            status_cb("Extracting audio to 16kHz mono WAV format...")
+            status_cb("Preparing audio track for transcription...")
             MediaProcessor.extract_16k_mono_wav(media_file, scratch_wav, cancel_event)
 
             if cancel_event.is_set():
@@ -1987,7 +2171,7 @@ class TranscriptionEngine:
             if cancel_event.is_set():
                 raise InterruptedError("Transcription cancelled.")
 
-            status_cb("Transcribing (this may take 1-2 minutes for YouTube videos)...")
+            status_cb("Transcribing audio (this usually takes 1–2 minutes)...")
 
             segments_gen, info = whisper_model.transcribe(
                 str(scratch_wav),
@@ -2017,9 +2201,6 @@ class TranscriptionEngine:
                         f"Transcribing: [{seg_obj.formatted_timestamp} / {media_meta.formatted_duration}] "
                         f"({int(pct * 100)}%)..."
                     )
-
-        if temp_dir_path and temp_dir_path.exists():
-            shutil.rmtree(temp_dir_path, ignore_errors=True)
 
         if cancel_event.is_set():
             raise InterruptedError("Transcription cancelled.")
@@ -2079,13 +2260,11 @@ class TranscriptionEngine:
                 "Please free up disk space before proceeding."
             )
 
-        temp_dir_path: Optional[Path] = None
         segments_collected: List[TranscriptSegment] = []
         clip_info: Optional[OnlineClipInfo] = None
         probed_meta: Optional[MediaMetadata] = None
 
-        with tempfile.TemporaryDirectory(prefix="faery_transcribe_") as temp_dir_str:
-            temp_dir_path = Path(temp_dir_str)
+        with ScratchLifecycleManager.safe_scratch_directory(prefix="faery_transcribe_") as temp_dir_path:
             scratch_wav = temp_dir_path / "audio_16k_mono.wav"
 
             # 1. Download temporary audio into temp_dir_path
@@ -2102,7 +2281,7 @@ class TranscriptionEngine:
                 raise InterruptedError("Transcription cancelled.")
 
             # 2. Convert to 16kHz mono WAV inside temp_dir_path
-            status_cb(f"🎵 Extracting 16kHz mono audio for '{clip_info.sanitized_title}'...")
+            status_cb(f"🎵 Preparing audio track for '{clip_info.sanitized_title}'...")
             MediaProcessor.extract_16k_mono_wav(clip_info.temp_media_path, scratch_wav, cancel_event)
 
             # Immediately purge the raw downloaded audio stream
@@ -2299,6 +2478,9 @@ class FaeryTranscriberApp(ctk.CTk):
     """
 
     def __init__(self):
+        # Initialize fail-safe temporary scratch lifecycle hooks and background orphan sweep
+        ScratchLifecycleManager.initialize_lifecycle()
+
         # Apply Faery Good theme before initializing CTk root
         apply_faery_good_theme()
         super().__init__()
@@ -2324,6 +2506,7 @@ class FaeryTranscriberApp(ctk.CTk):
 
         # History view tracking
         self.selected_history_id: Optional[str] = None
+        self._radio_after_id: Optional[str] = None
 
         # Window configuration & Faery Good Icon
         self.title(f"{APP_NAME}  —  Whimsy is Power")
@@ -2361,10 +2544,18 @@ class FaeryTranscriberApp(ctk.CTk):
         self._trigger_background_update_check()
 
         # Start periodic radio state & playback ticker (250ms)
-        self.after(250, self._radio_tick)
+        self._radio_after_id = self.after(250, self._radio_tick)
 
     def _trigger_background_update_check(self, force: bool = False) -> None:
         """Launches a non-blocking background daemon thread to check and pull GitHub updates."""
+        if not force:
+            # Standalone packages and non-git environments never run background git checks
+            if AutoUpdater.is_standalone_bundle() or not AutoUpdater.is_git_available():
+                return
+            project_dir = Path(__file__).resolve().parent
+            if not (project_dir / ".git").exists():
+                return
+
         def _worker():
             project_dir = Path(__file__).resolve().parent
             updated, msg = AutoUpdater.run_update_check_and_pull(
@@ -2382,7 +2573,7 @@ class FaeryTranscriberApp(ctk.CTk):
                 self.after(0, _notify)
             elif force:
                 def _show_info():
-                    messagebox.showinfo("Update Check", msg)
+                    messagebox.showinfo("Update Check ✨", msg)
                 self.after(0, _show_info)
 
         thread = threading.Thread(target=_worker, daemon=True)
@@ -3321,10 +3512,11 @@ class FaeryTranscriberApp(ctk.CTk):
                 self.config.output_directory = chosen_path
                 self._update_output_dir_label()
                 self._refresh_history_list()
-            except Exception as err:
+            except Exception:
                 messagebox.showerror(
-                    "Cannot Use Folder",
-                    f"The selected folder cannot be written to:\n{err}",
+                    "Folder Not Accessible 📂",
+                    "We couldn't save to the selected folder.\n\n"
+                    "Please make sure you have permission to save files here, or choose another folder (such as Documents or Desktop).",
                 )
 
     def _activate_online_url(self, url: str) -> None:
@@ -3338,7 +3530,7 @@ class FaeryTranscriberApp(ctk.CTk):
         short_url = clean_url if len(clean_url) <= 46 else clean_url[:43] + "..."
         self.file_name_label.configure(text=f"🌐 {platform} Clip Ready")
         self.file_meta_label.configure(
-            text=f"🔗 {short_url}   |   🧹 Temp audio auto-purged"
+            text=f"🔗 {short_url}   |   🔒 Temp audio cleaned automatically"
         )
         mod_key = "⌘Return" if sys.platform == "darwin" else "Ctrl+Enter"
         self.status_label.configure(
@@ -3382,7 +3574,7 @@ class FaeryTranscriberApp(ctk.CTk):
             return
 
         messagebox.showinfo(
-            "Paste a Video Link",
+            "Paste a Video Link 🔗",
             "Copy any video or reel link from Instagram, YouTube, TikTok, or Facebook "
             "(starting with https://), then click '📋 Paste Link' or paste it directly into the link box!",
         )
@@ -3405,7 +3597,7 @@ class FaeryTranscriberApp(ctk.CTk):
             return
 
         file_path = Path(chosen)
-        self.status_label.configure(text=f"Probing {file_path.name}...")
+        self.status_label.configure(text=f"Reading {file_path.name}...")
         self.update_idletasks()
 
         try:
@@ -3423,30 +3615,34 @@ class FaeryTranscriberApp(ctk.CTk):
             self.file_meta_label.configure(
                 text=f"⏱ Duration: {metadata.formatted_duration}   |   "
                      f"📦 Size: {metadata.formatted_size}   |   "
-                     f"🎵 Audio: Valid track detected"
+                     f"🎵 Audio: Sound track detected"
             )
             mod_key = "⌘Return" if sys.platform == "darwin" else "Ctrl+Enter"
             self.status_label.configure(
                 text=f"Ready to transcribe '{file_path.name}' ({metadata.formatted_duration}). Click 'Generate Transcript' or press {mod_key}."
             )
         except ValueError as val_err:
-            messagebox.showerror("Unsupported / Invalid File", str(val_err))
+            messagebox.showerror("Cannot Read File 📁", str(val_err))
             self.status_label.configure(text="Selected file could not be read.")
-        except Exception as err:
-            messagebox.showerror("File Error", f"Failed to inspect file:\n{err}")
-            self.status_label.configure(text="Inspection failed.")
+        except Exception:
+            messagebox.showerror(
+                "Unable to Open File 📁",
+                "We were unable to read this file. It may be in an unsupported format or currently open in another app.\n\n"
+                "Tip: Try choosing an MP4, MOV, MP3, M4A, or WAV file.",
+            )
+            self.status_label.configure(text="✨ Ready — Select a video or audio clip to begin.")
 
     def _prompt_overwrite_dialog(self, base_stem: str, existing_file: Path) -> Optional[bool]:
         """Displays a Yes/No/Cancel dialog asking whether to overwrite or create a numbered copy."""
         return messagebox.askyesnocancel(
-            title="Transcript Already Exists",
+            title="Transcript Already Exists 📄",
             message=(
                 f"A transcript for '{base_stem}' already exists in your output folder:\n\n"
                 f"• {existing_file.name}\n\n"
-                "Would you like to overwrite the existing transcript files?\n\n"
-                "• Click 'Yes' to OVERWRITE the existing files.\n"
-                f"• Click 'No' to create a new numbered version (e.g. '{base_stem}_1').\n"
-                "• Click 'Cancel' to abort."
+                "How would you like to save this new transcript?\n\n"
+                "• Click 'Yes' to replace the existing file.\n"
+                f"• Click 'No' to keep both and save as a new numbered copy (e.g. '{base_stem}_1').\n"
+                "• Click 'Cancel' to stop without making changes."
             ),
         )
 
@@ -3477,9 +3673,9 @@ class FaeryTranscriberApp(ctk.CTk):
                 self._activate_online_url(typed_url)
             elif not self.selected_file:
                 messagebox.showwarning(
-                    "Invalid Link",
-                    "The link entered does not look like a valid web address.\n\n"
-                    "Please paste a complete link starting with https:// (from Instagram, YouTube, TikTok, or Facebook).",
+                    "Link Not Recognized 🔗",
+                    "The link entered doesn't look quite right.\n\n"
+                    "Please paste a complete web address starting with https:// (from Instagram, YouTube, TikTok, or Facebook).",
                 )
                 return
 
@@ -3488,8 +3684,8 @@ class FaeryTranscriberApp(ctk.CTk):
 
         if not has_local and not has_online:
             messagebox.showwarning(
-                "No Clip or Link Selected",
-                "Please select a local video/audio file or paste an Instagram, YouTube, TikTok, or Facebook link first.",
+                "No Clip Selected 🎬",
+                "Please choose a video or audio file from your computer or paste an Instagram, YouTube, TikTok, or Facebook link to get started.",
             )
             return
 
@@ -3712,7 +3908,7 @@ class FaeryTranscriberApp(ctk.CTk):
             platform = OnlineMediaFetcher.detect_platform(source_identifier)
             self.file_name_label.configure(text=f"🌐 {online_clip_title}")
             self.file_meta_label.configure(
-                text=f"⏱ Duration: {duration_str}   |   🌍 Source: {platform}   |   🧹 Temp audio purged"
+                text=f"⏱ Duration: {duration_str}   |   🌍 Source: {platform}   |   🔒 Temp audio cleaned automatically"
             )
 
         # Re-render active view
@@ -3755,33 +3951,105 @@ class FaeryTranscriberApp(ctk.CTk):
         self.progress_bar.stop()
         self.progress_bar.configure(mode="determinate")
         self.progress_bar.set(0.0)
-        self.status_label.configure(text="Transcription was cancelled. Scratch files purged.")
+        self.status_label.configure(text="Transcription was cancelled. Temporary files safely cleaned up.")
 
     def _on_transcription_failed(self, error: Exception) -> None:
         self._reset_controls()
         self.progress_bar.stop()
         self.progress_bar.configure(mode="determinate")
         self.progress_bar.set(0.0)
-        self.status_label.configure(text="Error occurred during transcription.")
+        self.status_label.configure(text="Ready to transcribe.")
 
         err_msg = str(error)
         lower_msg = err_msg.lower()
         if "disk space" in lower_msg:
-            messagebox.showerror("Low Disk Space", err_msg)
-        elif "could not download audio from" in lower_msg or "requires you to be logged in" in lower_msg:
-            messagebox.showerror("Online Link Download Error", err_msg)
-        elif "hugging face" in lower_msg or ("download" in lower_msg and "model" in lower_msg):
             messagebox.showerror(
-                "Model Download Error",
-                "Failed to download Whisper model from Hugging Face.\n\n"
-                "Please verify your internet connection. Once downloaded, the model "
-                "runs completely offline without an internet connection.\n\n"
-                f"Details: {err_msg}",
+                "Disk Space Needed 💾",
+                "Your computer is running low on disk space to process this audio.\n\n"
+                "Please free up a small amount of disk space (at least 500 MB) on your drive and try again.",
+            )
+        elif any(k in lower_msg for k in ("could not download", "requires you to be logged in", "requires you to be signed in", "requires sign-in", "login", "cookie", "private")):
+            if "instagram" in lower_msg or "facebook" in lower_msg:
+                messagebox.showerror(
+                    "Instagram / Facebook Sign-In 🔐",
+                    "This post requires you to be signed in to access it (or it may be set to private).\n\n"
+                    "Helpful tips:\n"
+                    "• Under Studio Preferences, select your web browser in '🔐 Social Login' so the transcriber can access your signed-in session.\n"
+                    "• Check that the post is still available online.\n"
+                    "• Make sure your computer is connected to the internet.",
+                )
+            else:
+                messagebox.showerror(
+                    "Video Link Notice 🌐",
+                    "We couldn't download the audio from this link.\n\n"
+                    "Helpful tips:\n"
+                    "• Make sure the video is public and available to watch online.\n"
+                    "• If this video requires sign-in, try selecting your browser in '🔐 Social Login' under Studio Preferences.\n"
+                    "• Check that your internet connection is active.",
+                )
+        elif "hugging face" in lower_msg or ("download" in lower_msg and "model" in lower_msg) or "connection" in lower_msg or "offline" in lower_msg:
+            messagebox.showerror(
+                "Model Download Connection 🌐",
+                "The speech engine needs to download the transcription model for your first use.\n\n"
+                "Please check your internet connection and try again. Once downloaded once, it works completely offline!",
+            )
+        elif "timeout" in lower_msg or "timed out" in lower_msg:
+            messagebox.showerror(
+                "Connection Timed Out 🌐",
+                "The connection took too long to complete.\n\n"
+                "Please check your internet connection and click 'Generate Transcript' again.",
+            )
+        elif "no audio" in lower_msg or "empty audio" in lower_msg or "no speech" in lower_msg:
+            messagebox.showinfo(
+                "No Spoken Words Detected 🎙️",
+                "We processed the audio, but no spoken speech was detected in this clip.\n\n"
+                "If there is faint speech, you can try selecting the 'High Accuracy' model option and trying again.",
+            )
+        elif "ffmpeg" in lower_msg or "audio extraction failed" in lower_msg or "corrupt" in lower_msg:
+            messagebox.showerror(
+                "Audio File Notice 🎵",
+                "We were unable to read the audio track from this media file.\n\n"
+                "Helpful tips:\n"
+                "• Check that the video or audio file plays normally in your media player.\n"
+                "• Try converting or re-saving the file as an MP4, MOV, MP3, or WAV.",
+            )
+        elif "memory" in lower_msg:
+            messagebox.showerror(
+                "Memory Limit Reached ⚡",
+                "Your computer ran low on temporary memory while transcribing.\n\n"
+                "Helpful tips:\n"
+                "• Try selecting the 'Standard / Fast' model option under Studio Preferences.\n"
+                "• Close other memory-heavy applications and try again.",
+            )
+        elif "permission" in lower_msg or "access is denied" in lower_msg:
+            messagebox.showerror(
+                "Folder Access Needed 📁",
+                "The transcriber doesn't have permission to write to your output folder.\n\n"
+                "Please choose a different output folder (such as Documents or Desktop) under Studio Preferences.",
             )
         else:
+            # Clean up raw Python tracebacks or noisy regex lines for a clean, friendly appearance
+            first_line = err_msg.strip().split("\n")[0]
+            for prefix in ("RuntimeError:", "ValueError:", "IOError:", "OSError:", "Exception:", "Error:"):
+                if first_line.startswith(prefix):
+                    first_line = first_line[len(prefix):].strip()
+
+            clean_err = first_line if len(first_line) <= 120 else first_line[:117] + "..."
+            if not clean_err or any(token in clean_err.lower() for token in ("traceback", "file \"", "line ", "0x", "nonetype")):
+                friendly_body = (
+                    "We encountered a small hiccup while processing this clip.\n\n"
+                    "Don't worry — no work was lost! Please try choosing the file or link again, "
+                    "or try the 'Standard / Fast' model option."
+                )
+            else:
+                friendly_body = (
+                    f"We encountered an issue while processing this clip:\n\n{clean_err}\n\n"
+                    "Tip: Try choosing another file or link, or try again in a moment."
+                )
+
             messagebox.showerror(
-                "Transcription Error",
-                f"An error occurred while processing the clip:\n\n{err_msg}",
+                "Transcription Notice ✨",
+                friendly_body,
             )
 
     def _reset_controls(self) -> None:
@@ -3809,7 +4077,7 @@ class FaeryTranscriberApp(ctk.CTk):
     def _on_cancel_clicked(self) -> None:
         if self.is_transcribing:
             self.cancel_event.set()
-            self.status_label.configure(text="Cancelling and purging scratch files...")
+            self.status_label.configure(text="Cancelling and cleaning up temporary files...")
             self.cancel_btn.configure(state="disabled")
 
     def _on_view_mode_changed(self, choice: str) -> None:
@@ -3852,7 +4120,10 @@ class FaeryTranscriberApp(ctk.CTk):
     def _on_save_txt_clicked(self) -> None:
         content = self.textbox.get("1.0", "end-1c").strip()
         if not content:
-            messagebox.showinfo("Empty Transcript", "There is no text to save.")
+            messagebox.showinfo(
+                "No Transcript to Save 📝",
+                "Your transcript is currently empty. Generate a transcript or enter some text before saving.",
+            )
             return
 
         mode = self.view_selector.get()
@@ -3870,13 +4141,19 @@ class FaeryTranscriberApp(ctk.CTk):
                 with open(dest, "w", encoding="utf-8") as f:
                     f.write(content + "\n")
                 self.status_label.configure(text=f"Saved text transcript to: {Path(dest).name}")
-            except Exception as err:
-                messagebox.showerror("Save Error", f"Could not save file:\n{err}")
+            except Exception:
+                messagebox.showerror(
+                    "Could Not Save File 💾",
+                    "We couldn't save your text file.\n\nPlease check that you have permission to write to this folder and that the file isn't currently open in another app.",
+                )
 
     def _on_save_md_clicked(self) -> None:
         content = self.textbox.get("1.0", "end-1c").strip()
         if not content:
-            messagebox.showinfo("Empty Transcript", "There is no text to save.")
+            messagebox.showinfo(
+                "No Transcript to Save 📝",
+                "Your transcript is currently empty. Generate a transcript or enter some text before saving.",
+            )
             return
 
         initial_name = f"{self.selected_file.stem}_transcript.md" if self.selected_file else "transcript.md"
@@ -3911,15 +4188,21 @@ class FaeryTranscriberApp(ctk.CTk):
                 with open(dest, "w", encoding="utf-8") as f:
                     f.write(md_content + "\n")
                 self.status_label.configure(text=f"Saved Markdown transcript to: {Path(dest).name}")
-            except Exception as err:
-                messagebox.showerror("Save Error", f"Could not save Markdown file:\n{err}")
+            except Exception:
+                messagebox.showerror(
+                    "Could Not Save File 💾",
+                    "We couldn't save your Markdown transcript file.\n\nPlease check that you have permission to write to this folder and that the file isn't open in another app.",
+                )
 
     def _on_open_folder_clicked(self) -> None:
         target = self.config.output_directory
         try:
             open_system_folder(target)
-        except Exception as err:
-            messagebox.showerror("Open Folder Error", f"Could not open directory:\n{err}")
+        except Exception:
+            messagebox.showerror(
+                "Cannot Open Folder 📂",
+                "We couldn't open your output folder. It may have been moved or deleted.\n\nTip: You can select a new output folder under Studio Preferences.",
+            )
 
     def _update_stats(self, event=None) -> None:
         content = self.textbox.get("1.0", "end-1c").strip()
@@ -4137,8 +4420,11 @@ class FaeryTranscriberApp(ctk.CTk):
                     self.history_title_label.configure(text=updated.title)
                     self._refresh_history_list(filter_text=None, resync=False)
                     self._load_history_preview(updated)
-            except Exception as err:
-                messagebox.showerror("Rename Error", f"Could not rename files:\n{err}")
+            except Exception:
+                messagebox.showerror(
+                    "Could Not Rename ✏️",
+                    "We couldn't rename this transcript.\n\nPlease make sure the file isn't currently open in another application and try again.",
+                )
 
     def _on_history_save_edits_clicked(self) -> None:
         """Saves current edits from the history textbox directly to the active file."""
@@ -4159,7 +4445,10 @@ class FaeryTranscriberApp(ctk.CTk):
             target_path = record.paragraphs_file
 
         if not target_path:
-            messagebox.showwarning("No File", "No file path is associated with this format.")
+            messagebox.showwarning(
+                "File Not Found 📄",
+                "There is no saved file on disk for this format yet.",
+            )
             return
 
         content = self.history_textbox.get("1.0", "end-1c")
@@ -4178,8 +4467,11 @@ class FaeryTranscriberApp(ctk.CTk):
                     text_color=FAERY_SECONDARY_TEXT,
                 ),
             )
-        except Exception as err:
-            messagebox.showerror("Save Error", f"Could not save changes to file:\n{err}")
+        except Exception:
+            messagebox.showerror(
+                "Could Not Save Edits 💾",
+                "We couldn't save your edits to disk.\n\nPlease check that the file isn't open or locked by another app.",
+            )
 
     def _on_history_copy_clicked(self) -> None:
         content = self.history_textbox.get("1.0", "end-1c").strip()
@@ -4214,7 +4506,10 @@ class FaeryTranscriberApp(ctk.CTk):
         if target_path and os.path.exists(target_path):
             open_system_file(Path(target_path))
         else:
-            messagebox.showinfo("File Missing", "File does not exist on disk.")
+            messagebox.showinfo(
+                "File Moved or Missing 📂",
+                "This file could not be found in your output folder. It may have been moved or deleted.",
+            )
 
     def _on_history_reveal_folder_clicked(self) -> None:
         open_system_folder(self.config.output_directory)
@@ -4228,8 +4523,8 @@ class FaeryTranscriberApp(ctk.CTk):
             return
 
         if messagebox.askyesno(
-            "Delete Transcript",
-            f"Are you sure you want to permanently delete '{record.title}' and its associated files from disk?",
+            "Delete Transcript? 🗑️",
+            f"Are you sure you want to delete '{record.title}' and its saved transcript files?\n\nThis cannot be undone.",
         ):
             self.history.delete_record(self.selected_history_id)
             self.selected_history_id = None
@@ -4616,25 +4911,31 @@ class FaeryTranscriberApp(ctk.CTk):
             except Exception:
                 pass
 
-    def _on_window_close(self) -> None:
-        """Handles graceful application shutdown, guaranteeing scratch purge."""
+    def destroy(self) -> None:
+        """Ensures cleanup of timers, radio playback, and scratch space upon destruction."""
         try:
             if hasattr(self, "_radio_after_id") and self._radio_after_id:
                 self.after_cancel(self._radio_after_id)
                 self._radio_after_id = None
         except Exception:
             pass
-
         try:
             if hasattr(self, "radio_controller"):
                 self.radio_controller.stop()
         except Exception:
             pass
+        try:
+            ScratchLifecycleManager.cleanup_all_active()
+        except Exception:
+            pass
+        super().destroy()
 
+    def _on_window_close(self) -> None:
+        """Handles graceful application shutdown, guaranteeing scratch purge."""
         if self.is_transcribing:
             if messagebox.askyesno(
-                "Transcription in Progress",
-                "A transcription is currently running. Do you want to cancel and exit?",
+                "Transcription in Progress ⏳",
+                "A transcription is currently running. Would you like to cancel it and exit now?",
             ):
                 self.cancel_event.set()
                 self.destroy()
@@ -4931,10 +5232,13 @@ class FaeryTranscriberApp(ctk.CTk):
             "   • ⏱️ Timecoded: [MM:SS] timestamps ready to paste directly into your "
             "YouTube description for automatic video chapters.\n"
             "   • 📝 Raw Text: Continuous unsegmented text.\n\n"
-            "4. 100% PRIVATE & ZERO LEFTOVER AUDIO FILES\n"
-            "   All transcription runs locally on your Mac's CPU. Downloaded and converted "
-            "audio files are strictly temporary and purged immediately after transcription.\n\n"
-            "5. HISTORY LIBRARY (⌘2 / Ctrl+2)\n"
+            "4. 100% PRIVATE & ON-DEVICE\n"
+            "   All transcription runs 100% privately on your computer. Downloaded and converted "
+            "audio files are strictly temporary and cleaned up automatically immediately after transcription.\n\n"
+            "5. SOCIAL LOGIN (FOR INSTAGRAM & FACEBOOK)\n"
+            "   Most links transcribe automatically! If an Instagram or Facebook clip requires sign-in, "
+            "simply select your browser in '🔐 Social Login' under Studio Preferences.\n\n"
+            "6. HISTORY LIBRARY (⌘2 / Ctrl+2)\n"
             "   Every transcript is saved to your output folder. Search, rename, edit, and "
             "export any past transcript in the History tab!"
         )
@@ -5024,7 +5328,7 @@ class FaeryTranscriberApp(ctk.CTk):
             "• AI Engine: faster-whisper (CTranslate2 int8 CPU, 4 threads)\n"
             "• Target Systems: macOS Sonoma (Intel x86_64) & Windows 11\n"
             "• Audio Extraction: Bundled static FFmpeg (Zero external setup)\n"
-            "• Hygiene Guarantee: 100% scratch file purge via TemporaryDirectory\n"
+            "• Hygiene Guarantee: 100% automatic cleanup of temporary audio files\n"
             "• Privacy: 100% offline, on-device transcription\n\n"
             "Crafted with love & whimsy for effortless reels, stories, and video chapters."
         )

@@ -516,6 +516,96 @@ class TestAutoUpdater(unittest.TestCase):
         res = AutoUpdater.is_internet_available(timeout=1.0)
         self.assertIsInstance(res, bool)
 
+    def test_standalone_bundle_update_behavior(self):
+        from app import AutoUpdater, ConfigManager
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as td:
+            cfg = ConfigManager(config_path=Path(td) / "cfg.json")
+            project_dir = Path(td)
+            with mock.patch.object(sys, "frozen", True, create=True):
+                self.assertTrue(AutoUpdater.is_standalone_bundle())
+                updated, msg = AutoUpdater.run_update_check_and_pull(cfg, project_dir, force=False)
+                self.assertFalse(updated)
+                self.assertIn("Standalone", msg)
+
+                updated, msg = AutoUpdater.run_update_check_and_pull(cfg, project_dir, force=True)
+                self.assertFalse(updated)
+                self.assertIn("standalone", msg.lower())
+                self.assertIn("faerygood.com", msg)
+
+    def test_git_cli_missing_behavior(self):
+        from app import AutoUpdater, ConfigManager
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as td:
+            cfg = ConfigManager(config_path=Path(td) / "cfg.json")
+            project_dir = Path(td)
+            with mock.patch("shutil.which", return_value=None):
+                self.assertFalse(AutoUpdater.is_git_available())
+                updated, msg = AutoUpdater.run_update_check_and_pull(cfg, project_dir, force=False)
+                self.assertFalse(updated)
+
+                updated, msg = AutoUpdater.run_update_check_and_pull(cfg, project_dir, force=True)
+                self.assertFalse(updated)
+                self.assertIn("Git was not found", msg)
+
+
+class TestScratchLifecycleManager(unittest.TestCase):
+    def test_safe_scratch_directory_lifecycle(self):
+        from app import ScratchLifecycleManager
+        created_path = None
+        with ScratchLifecycleManager.safe_scratch_directory(prefix="faery_transcribe_test_") as temp_dir:
+            created_path = temp_dir
+            self.assertTrue(created_path.exists())
+            self.assertIn(created_path.resolve(), ScratchLifecycleManager._active_scratch_dirs)
+            (created_path / "dummy_audio.wav").write_bytes(b"RIFF dummy audio data")
+            self.assertTrue((created_path / "dummy_audio.wav").exists())
+
+        self.assertFalse(created_path.exists())
+        self.assertNotIn(created_path.resolve(), ScratchLifecycleManager._active_scratch_dirs)
+
+    def test_safe_scratch_directory_on_exception(self):
+        from app import ScratchLifecycleManager
+        created_path = None
+        try:
+            with ScratchLifecycleManager.safe_scratch_directory(prefix="faery_transcribe_test_") as temp_dir:
+                created_path = temp_dir
+                self.assertTrue(created_path.exists())
+                (created_path / "cancelled_audio.wav").write_bytes(b"cancelled")
+                raise InterruptedError("User cancelled transcription")
+        except InterruptedError:
+            pass
+
+        self.assertFalse(created_path.exists())
+        self.assertNotIn(created_path.resolve(), ScratchLifecycleManager._active_scratch_dirs)
+
+    def test_cleanup_all_active(self):
+        from app import ScratchLifecycleManager
+        dir1 = Path(tempfile.mkdtemp(prefix="faery_transcribe_act1_"))
+        dir2 = Path(tempfile.mkdtemp(prefix="faery_transcribe_act2_"))
+        ScratchLifecycleManager.register_dir(dir1)
+        ScratchLifecycleManager.register_dir(dir2)
+
+        self.assertTrue(dir1.exists())
+        self.assertTrue(dir2.exists())
+
+        ScratchLifecycleManager.cleanup_all_active()
+
+        self.assertFalse(dir1.exists())
+        self.assertFalse(dir2.exists())
+        self.assertEqual(len(ScratchLifecycleManager._active_scratch_dirs), 0)
+
+    def test_cleanup_orphaned_scratch(self):
+        from app import ScratchLifecycleManager
+        orphan_dir = Path(tempfile.mkdtemp(prefix="faery_transcribe_orphan_"))
+        (orphan_dir / "leftover.wav").write_bytes(b"stale data")
+
+        self.assertTrue(orphan_dir.exists())
+        self.assertNotIn(orphan_dir.resolve(), ScratchLifecycleManager._active_scratch_dirs)
+
+        ScratchLifecycleManager.cleanup_orphaned_scratch()
+
+        self.assertFalse(orphan_dir.exists(), "Orphaned scratch directory must be purged")
+
 
 class TestFaeryRadio(unittest.TestCase):
     def test_radio_asset_discovery(self):

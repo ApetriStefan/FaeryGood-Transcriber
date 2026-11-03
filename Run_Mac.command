@@ -34,6 +34,7 @@ if [ ! -d ".venv" ]; then
     echo "📦 Initializing clean Python virtual environment (.venv)..."
     "$PYTHON_CMD" -m venv .venv || {
         echo "❌ Failed to create virtual environment."
+        osascript -e 'display alert "Setup Notice - Faery Good Transcriber" message "Failed to create a local virtual environment (.venv). Please ensure you have write permissions in this folder and that all files were extracted from the archive." as warning' 2>/dev/null || true
         read -p "Press Enter to exit..."
         exit 1
     }
@@ -48,6 +49,7 @@ if ! python -c "import customtkinter, faster_whisper, imageio_ffmpeg, PIL, yt_dl
     pip install --upgrade pip -q
     pip install -r requirements.txt -q || {
         echo "❌ Dependency installation failed. Please check your internet connection."
+        osascript -e 'display alert "Internet Connection Needed" message "Could not complete setup because component installation encountered an issue. Please check your internet connection and double-click Run_Mac.command again to resume." as warning' 2>/dev/null || true
         read -p "Press Enter to exit..."
         exit 1
     }
@@ -59,6 +61,8 @@ fi
 
 # Launch Application
 echo "✨ Launching Faery Good Transcriber..."
-python app.py
+python app.py || {
+    osascript -e 'display alert "Faery Good Transcriber Notice" message "The application stopped unexpectedly. If this issue persists, please verify all files were extracted from the archive." as warning' 2>/dev/null || true
+}
 
 deactivate
