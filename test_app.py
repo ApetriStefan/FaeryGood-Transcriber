@@ -11,12 +11,14 @@ Verifies:
 """
 
 import os
+import plistlib
 import sys
 import tempfile
 import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch, MagicMock
 
 # Add current workspace to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -32,6 +34,11 @@ from app import (
     get_verified_ffmpeg_exe,
     check_free_disk_space,
     open_system_folder,
+    ensure_macos_app_installed,
+    is_directory_writable,
+    _create_macos_app_bundle,
+    APP_NAME,
+    APP_VERSION,
 )
 
 
@@ -798,6 +805,124 @@ class TestFaeryRadio(unittest.TestCase):
         finally:
             app.radio_controller.stop()
             app.destroy()
+
+
+class TestMacOSAppIntegration(unittest.TestCase):
+    """Verifies macOS Applications folder integration and Spotlight discovery."""
+
+    def test_platform_guard_non_darwin(self):
+        """Platform guard: on non-darwin platforms, ensure_macos_app_installed is bypassed without error."""
+        # Explicit non-darwin platform overrides
+        self.assertIsNone(ensure_macos_app_installed(force_platform="win32"))
+        self.assertIsNone(ensure_macos_app_installed(force_platform="linux"))
+
+        # When running on host non-darwin OS without force_platform
+        if sys.platform != "darwin":
+            self.assertIsNone(ensure_macos_app_installed())
+
+    def test_bundle_structure_creation(self):
+        """Source-Run mode: creates valid .app bundle structure (Info.plist, launcher, icon, permissions)."""
+        with tempfile.TemporaryDirectory() as td:
+            mock_apps_dir = Path(td) / "Applications"
+            mock_apps_dir.mkdir()
+
+            bundle_path = ensure_macos_app_installed(
+                applications_dir=mock_apps_dir,
+                force_platform="darwin",
+            )
+            self.assertIsNotNone(bundle_path)
+            self.assertEqual(bundle_path, mock_apps_dir / "Faery Good Transcriber.app")
+            self.assertTrue(bundle_path.is_dir())
+
+            # 1. Verify Contents/Info.plist
+            plist_file = bundle_path / "Contents" / "Info.plist"
+            self.assertTrue(plist_file.is_file())
+            with open(plist_file, "rb") as fp:
+                plist_data = plistlib.load(fp)
+            self.assertEqual(plist_data.get("CFBundleName"), "Faery Good Transcriber")
+            self.assertEqual(plist_data.get("CFBundleDisplayName"), "Faery Good Transcriber")
+            self.assertEqual(plist_data.get("CFBundleIdentifier"), "com.faerygood.transcriber")
+            self.assertEqual(plist_data.get("CFBundlePackageType"), "APPL")
+            self.assertEqual(plist_data.get("CFBundleExecutable"), "Faery Good Transcriber")
+            self.assertEqual(plist_data.get("CFBundleVersion"), APP_VERSION)
+
+            # 2. Verify Contents/MacOS/Faery Good Transcriber launcher script
+            launcher_file = bundle_path / "Contents" / "MacOS" / "Faery Good Transcriber"
+            self.assertTrue(launcher_file.is_file())
+            launcher_content = launcher_file.read_text(encoding="utf-8")
+            self.assertIn("REPO_DIR=", launcher_content)
+            self.assertIn("app.py", launcher_content)
+
+            # 3. Verify Contents/Resources/faery_icon.icns
+            repo_icon = Path(__file__).resolve().parent / "assets" / "faery_icon.icns"
+            if repo_icon.exists():
+                icon_file = bundle_path / "Contents" / "Resources" / "faery_icon.icns"
+                self.assertTrue(icon_file.is_file())
+                self.assertGreater(icon_file.stat().st_size, 0)
+
+    def test_fallback_unwritable_applications_directory(self):
+        """Fallback: if /Applications is not writable, automatically falls back to ~/Applications."""
+        with tempfile.TemporaryDirectory() as td:
+            mock_sys_apps = Path(td) / "SystemApplications"
+            mock_usr_apps = Path(td) / "UserApplications"
+            mock_sys_apps.mkdir()
+
+            with patch("app.is_directory_writable", side_effect=lambda p: Path(p) != mock_sys_apps):
+                bundle_path = ensure_macos_app_installed(
+                    applications_dir=mock_sys_apps,
+                    user_applications_dir=mock_usr_apps,
+                    force_platform="darwin",
+                )
+                self.assertIsNotNone(bundle_path)
+                self.assertEqual(bundle_path, mock_usr_apps / "Faery Good Transcriber.app")
+                self.assertTrue(bundle_path.is_dir())
+                self.assertTrue((bundle_path / "Contents" / "Info.plist").is_file())
+                self.assertTrue((bundle_path / "Contents" / "MacOS" / "Faery Good Transcriber").is_file())
+
+                # Verify system applications folder was not used
+                self.assertFalse((mock_sys_apps / "Faery Good Transcriber.app").exists())
+
+    def test_frozen_bundle_mode_installation(self):
+        """Frozen Bundle mode: copies standalone bundle from source to Applications folder."""
+        with tempfile.TemporaryDirectory() as td:
+            td_path = Path(td)
+            mock_source_bundle = td_path / "SourceDist" / "Faery Good Transcriber.app"
+            mock_macos = mock_source_bundle / "Contents" / "MacOS"
+            mock_macos.mkdir(parents=True)
+            mock_exe = mock_macos / "Faery Good Transcriber"
+            mock_exe.write_text("#!/bin/sh\necho running\n", encoding="utf-8")
+
+            mock_apps_dir = td_path / "TargetApplications"
+            mock_apps_dir.mkdir()
+
+            with patch.object(sys, "frozen", True, create=True), \
+                 patch.object(sys, "executable", str(mock_exe)):
+                installed_bundle = ensure_macos_app_installed(
+                    applications_dir=mock_apps_dir,
+                    force_platform="darwin",
+                )
+                self.assertIsNotNone(installed_bundle)
+                self.assertEqual(installed_bundle, mock_apps_dir / "Faery Good Transcriber.app")
+                self.assertTrue(installed_bundle.is_dir())
+                self.assertTrue((installed_bundle / "Contents" / "MacOS" / "Faery Good Transcriber").is_file())
+
+                # If already running directly from target bundle, should return without error
+                with patch.object(sys, "executable", str(installed_bundle / "Contents" / "MacOS" / "Faery Good Transcriber")):
+                    re_check = ensure_macos_app_installed(
+                        applications_dir=mock_apps_dir,
+                        force_platform="darwin",
+                    )
+                    self.assertEqual(re_check, installed_bundle)
+
+    def test_is_directory_writable_helper(self):
+        """Validates is_directory_writable handles writable dirs and auto-creates missing dirs."""
+        with tempfile.TemporaryDirectory() as td:
+            valid_dir = Path(td) / "writable"
+            self.assertTrue(is_directory_writable(valid_dir))
+
+            non_existent_subdir = Path(td) / "sub1" / "sub2"
+            self.assertTrue(is_directory_writable(non_existent_subdir))
+            self.assertTrue(non_existent_subdir.exists())
 
 
 if __name__ == "__main__":

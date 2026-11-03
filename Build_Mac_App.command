@@ -24,7 +24,10 @@ pip install -r requirements.txt -q
 echo "⚙️ Compiling application bundle via PyInstaller..."
 pyinstaller --clean -y FaeryTranscriber.spec
 
-APP_PATH="dist/FaeryTranscriber.app"
+APP_PATH="dist/Faery Good Transcriber.app"
+if [ ! -d "$APP_PATH" ] && [ -d "dist/FaeryTranscriber.app" ]; then
+    APP_PATH="dist/FaeryTranscriber.app"
+fi
 BINARY_PATH="dist/FaeryTranscriber/FaeryTranscriber"
 
 if [ -d "$APP_PATH" ]; then
@@ -32,7 +35,7 @@ if [ -d "$APP_PATH" ]; then
     xattr -cr "$APP_PATH" 2>/dev/null || true
 
     # Ensure executable bit is set
-    chmod +x "$APP_PATH/Contents/MacOS/FaeryTranscriber" 2>/dev/null || true
+    chmod +x "$APP_PATH"/Contents/MacOS/* 2>/dev/null || true
 
     echo "=================================================="
     echo " ✅ SUCCESS! Standalone Mac App built at:"

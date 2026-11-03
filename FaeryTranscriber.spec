@@ -109,7 +109,7 @@ coll = COLLECT(
 if sys.platform == 'darwin':
     app = BUNDLE(
         coll,
-        name='FaeryTranscriber.app',
+        name='Faery Good Transcriber.app',
         icon=mac_icon,
         bundle_identifier='com.faerygood.transcriber',
         info_plist={

@@ -12,6 +12,14 @@ Everything runs **100% privately on your own computer**—no cloud uploads, no m
 * **On Windows:** Double-click **`Run_Windows.bat`**
 * **On Mac:** Double-click **`Run_Mac.command`**
 
+> 🍎 **Magic on Mac (First-Launch Bonus!):**  
+> On your very first launch on macOS, the app automatically adds **Faery Good Transcriber** to your Mac's **Applications** folder with its custom butterfly icon!
+>
+> That means after the first double-click, you **never need to open this folder or Terminal ever again**. You can launch the app anytime from:
+> * 🔍 **Spotlight:** Press **`⌘+Space`**, type **`Faery`**, and press **`Enter`**
+> * 🚀 **Launchpad:** Click the Faery Good butterfly icon in your Launchpad grid
+> * 📁 **Applications Folder or Dock:** Open it from Finder or drag it right to your Dock for 1-click access!
+
 > **A Quick First-Launch Note:** On your very first run, the app prepares its private Python environment and speech recognition model. This only takes about a minute. After that, launches are near-instant!
 > *(If your Mac shows a security prompt on the first double-click, simply right-click `Run_Mac.command` and choose **Open**).*
 > If Python 3 isn't installed yet, a friendly window will pop up with a 1-click button to download it.

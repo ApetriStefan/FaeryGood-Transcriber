@@ -68,6 +68,21 @@ flowchart TD
   - *Network Check:* Fast, non-blocking DNS ping (Cloudflare 1.1.1.1 / Google 8.8.8.8) to prevent timeouts when offline.
   - *Safe Pull Mechanism:* Fast-forward merge with automatic stash/pop protection for local user configuration files.
 
+### 2.7 Automated macOS Application Registration Subsystem (`ensure_macos_app_installed` & `install_app_bundle`)
+- Implemented in Python (`ensure_macos_app_installed`, `_create_macos_app_bundle`, `_register_macos_app_bundle` in `app.py`) and mirrored in shell (`install_app_bundle` in `Run_Mac.command`).
+- **Bootstrap Execution:** Executes automatically during application startup (`main()`) before GUI initialization, guaranteeing immediate registration on first launch.
+- **Execution Mode Handling:**
+  - *Source-Run Mode (Git clone / unpacked folder):* Synthesizes a valid `Faery Good Transcriber.app` bundle on the fly. Generates `Contents/Info.plist` (metadata, bundle ID `com.faerygood.transcriber`, category `public.app-category.video`), an executable launcher wrapper (`Contents/MacOS/Faery Good Transcriber`) targeting `.venv/bin/python` / `Run_Mac.command`, and copies the native icon (`Contents/Resources/faery_icon.icns`).
+  - *Frozen Bundle Mode (`sys.frozen`):* Detects standalone PyInstaller bundle root and synchronizes the active `.app` bundle into the target Applications directory (no-op if already executing from target).
+- **Zero-Sudo Permission Fallback (`/Applications` -> `~/Applications`):**
+  - Evaluates system directory writability via `is_directory_writable()`.
+  - Target selection: installs to `/Applications` if writable; otherwise falls back gracefully to `~/Applications` (`$HOME/Applications`).
+  - Eliminates administrative privilege escalation requirements (`sudo`) or write-failure crashes on restricted accounts.
+- **LaunchServices Registration & Spotlight Discovery:**
+  - *Gatekeeper Clearance:* Strips quarantine flags using `xattr -cr`.
+  - *LaunchServices Registration:* Forcefully registers the bundle using `lsregister -f` (`/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister`).
+  - *Spotlight Invalidation:* Touches bundle directory mtime (`os.utime` / `touch`), prompting instant Spotlight indexing (`⌘+Space`) and Launchpad cataloging without requiring a system restart.
+
 ---
 
 ## 3. Platform Distribution & Self-Healing Launchers
@@ -75,5 +90,5 @@ flowchart TD
 | Platform | Launcher Script | Self-Healing & Fallback Behavior |
 |---|---|---|
 | **Windows 10/11** | `Run_Windows.bat` | • Searches `PATH`, `py -3`, `%LOCALAPPDATA%\Programs\Python`, and `%ProgramFiles%\Python` across Python 3.8–3.13.<br>• If Python is missing, triggers a native PowerShell GUI dialog with a 1-click button opening python.org.<br>• Automatically provisions and verifies `.venv`, installs/updates missing dependencies silently, and launches `app.py`. |
-| **macOS** | `Run_Mac.command` | • Detects Homebrew (`/opt/homebrew`, `/usr/local`), system, and PATH Python 3 binaries.<br>• If missing, invokes native AppleScript dialogs offering 1-click download navigation.<br>• Provisions `.venv`, validates required packages, and launches windowed application. |
+| **macOS** | `Run_Mac.command` | • Detects Homebrew (`/opt/homebrew`, `/usr/local`), system, and PATH Python 3 binaries.<br>• If missing, invokes native AppleScript dialogs offering 1-click download navigation.<br>• Provisions `.venv`, validates required packages, and launches windowed application.<br>• Executes `install_app_bundle` to register `Faery Good Transcriber.app` into `/Applications` (or `~/Applications` fallback), strips quarantine flags (`xattr -cr`), and registers with LaunchServices (`lsregister -f`) for instant Spotlight discovery (`⌘+Space`). |
 | **Packaged Binary** | `FaeryTranscriber.spec` | • PyInstaller 6.x build configuration for windowed execution (`console=False`).<br>• Bundles runtime assets (radio MP3s, station bumpers, brand icons, warm theme JSON, static FFmpeg). |

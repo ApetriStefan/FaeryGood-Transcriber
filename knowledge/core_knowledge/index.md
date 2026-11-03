@@ -46,6 +46,7 @@ The single source of truth for repository documentation structure:
 | **ScratchLifecycleManager** | Subsystem providing guaranteed failsafe cleanup of temporary audio files across normal exits, cancellations, system signals, and crashes. |
 | **AutoUpdater** | Background component checking for updates every 7 days when running in a git clone, safely bypassed in standalone frozen bundles. |
 | **Self-Healing Launcher** | Platform batch/shell scripts (`Run_Windows.bat`, `Run_Mac.command`) that detect Python, self-provision virtual environments, and alert users via native GUI dialogs. |
+| **macOS App Registration** | Automated subsystem (`ensure_macos_app_installed`, `install_app_bundle`) installing `.app` bundles into `/Applications` (or `~/Applications`), clearing quarantine flags, and registering with LaunchServices for Spotlight indexing. |
 | **Faery Radio** | Embedded ambient music player (104.9 The Grift FM) with GTA-style station bumpers. |
 
 ---

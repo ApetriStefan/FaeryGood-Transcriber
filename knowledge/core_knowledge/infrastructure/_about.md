@@ -30,6 +30,10 @@ This directory documents the deployment, packaging, execution environments, self
 * **Self-Healing Fallbacks:**
   - If Python 3 is absent, displays a native AppleScript dialog offering 1-click browser navigation to the official Python download page.
   - Automatically creates `.venv`, upgrades `pip`, and installs dependencies quietly.
+* **Automatic Applications Folder Integration (`install_app_bundle`):**
+  - Probes writability of `/Applications`; falls back seamlessly to `$HOME/Applications` for standard accounts without root/sudo access.
+  - Constructs `Faery Good Transcriber.app` bundle containing `Info.plist`, `.venv` launcher script, and `faery_icon.icns`.
+  - Clears quarantine flags via `xattr -cr` and forces LaunchServices registration (`lsregister -f`) with timestamp touch for immediate Spotlight and Launchpad indexing.
 
 ---
 
@@ -43,15 +47,22 @@ This directory documents the deployment, packaging, execution environments, self
   - Brand icons (`assets/icon.png`, `assets/icon.ico`, `assets/icon.icns`).
   - Bundled binary dependencies (`imageio_ffmpeg` static FFmpeg executable).
 * **Standalone Immunity:** In frozen binary mode, `sys.frozen` evaluates to `True`, automatically instructing `AutoUpdater` to skip Git execution.
+* **macOS Application Registration Subsystem (`ensure_macos_app_installed`):**
+  - Executed on startup bootstrap (`main()`) before GUI initialization.
+  - **Source-Run Mode:** Generates `.app` bundle structure with launcher script and metadata on first launch.
+  - **Frozen Bundle Mode:** Safely synchronizes the standalone PyInstaller bundle into `/Applications` (or `~/Applications`).
+  - **Zero-Sudo Friction:** Falls back from `/Applications` to `~/Applications` if system directory permissions are restricted, ensuring no administrator password dialogs are shown.
+  - **System Registration:** Strips quarantine bits (`xattr -cr`), executes `lsregister -f`, and updates directory mtime (`os.utime`) for immediate Spotlight discoverability (`⌘+Space`).
 
 ---
 
 ## 4. Test Suite & Quality Verification
 
 * **Framework:** Standard library `unittest` (`test_app.py`).
-* **Test Matrix:** 26 comprehensive unit and integration tests covering:
+* **Test Matrix:** 37 comprehensive unit and integration tests covering:
   - Formatter logic (paragraphs, timecodes, markdown).
   - Scratch lifecycle hygiene and file lock backoff.
   - Auto-update cadence, bundle detection, and offline handling.
   - History indexing, search ranking, and persistence.
   - URL detection across all supported social platforms.
+  - macOS Application Integration (`TestMacOSAppIntegration`): platform guard on non-darwin OS, `.app` bundle hierarchy generation, permission fallback to `~/Applications`, frozen bundle replication, and directory writability validation.

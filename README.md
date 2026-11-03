@@ -69,6 +69,16 @@ The repository includes intelligent **Self-Healing Launchers** that automaticall
 * If file permissions were stripped after unzipping:  
   Open Terminal, type `chmod +x `, drag `Run_Mac.command` into the Terminal window, and press `Enter`.
 
+#### 🍎 Automatic macOS Applications Folder Integration
+On its very first run, Faery Good Transcriber automatically creates and registers **`Faery Good Transcriber.app`** in your **`/Applications`** folder (falling back smoothly to `~/Applications` with zero administrative prompts if `/Applications` requires root permissions).
+
+It automatically registers with macOS LaunchServices and clears quarantine attributes, allowing you to launch the app anytime from:
+* 🔍 **Spotlight Search:** Press **`⌘+Space`**, type **`Faery`**, and press **`Enter`**.
+* 🚀 **Launchpad:** Click the Faery Good butterfly icon directly from your app grid.
+* 📁 **Dock / Finder:** Open it from your Applications folder or pin it to your Dock!
+
+After the first double-click, you **never need to open the cloned project folder or Terminal again**.
+
 ---
 
 ## 🎬 Creator Workflows
@@ -227,7 +237,7 @@ The repository includes an extensive automated test suite covering all critical 
 # Activate your virtual environment, then run:
 python test_app.py
 ```
-*(All 32 automated unit and integration tests execute in under 6 seconds).*
+*(All 37 automated unit and integration tests execute in under 6 seconds).*
 
 ### Building Standalone macOS App & DMG
 If you want to create a native macOS drag-and-drop installer:
@@ -267,9 +277,9 @@ TranscriptionEngine/
 ├── README.md                   # 📖 Complete user documentation, architecture & guides
 ├── app.py                      # 💻 Complete standalone application code & CustomTkinter GUI
 ├── requirements.txt            # 📦 Production Python dependencies
-├── test_app.py                 # 🧪 Automated unit & integration test suite (32 tests)
+├── test_app.py                 # 🧪 Automated unit & integration test suite (37 tests)
 ├── Run_Windows.bat             # 🪟 1-Click self-healing Windows launcher
-├── Run_Mac.command             # 🍎 1-Click self-healing macOS launcher
+├── Run_Mac.command             # 🍎 1-Click self-healing macOS launcher & auto-installer to Applications
 ├── Build_Mac_App.command       # 🍏 1-Click standalone .app bundle builder
 ├── Create_Mac_DMG.command      # 💿 1-Click drag-and-drop .dmg installer creator
 ├── FaeryTranscriber.spec       # ⚙️ PyInstaller standalone packaging specification

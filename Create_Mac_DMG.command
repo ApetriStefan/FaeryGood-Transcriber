@@ -11,7 +11,10 @@ echo "========================================================"
 echo " 🦋 Packaging Faery Good Transcriber into .dmg installer"
 echo "========================================================"
 
-APP_PATH="dist/FaeryTranscriber.app"
+APP_PATH="dist/Faery Good Transcriber.app"
+if [ ! -d "$APP_PATH" ] && [ -d "dist/FaeryTranscriber.app" ]; then
+    APP_PATH="dist/FaeryTranscriber.app"
+fi
 
 # If the .app bundle hasn't been built yet, build it first
 if [ ! -d "$APP_PATH" ]; then
