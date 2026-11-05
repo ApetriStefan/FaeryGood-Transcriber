@@ -61,16 +61,16 @@ This directory documents the deployment, packaging, execution environments, self
 ## 4. Test Suite & Quality Verification
 
 * **Framework:** Standard library `unittest` (`test_app.py`).
-* **Status:** 37 passing unit and integration tests (0 failures, 0 errors).
+* **Status:** 41 passing unit and integration tests (0 failures, 0 errors).
 * **Execution:**
   ```bash
   python -m unittest test_app.py
   ```
-* **Test Matrix:** 37 comprehensive unit and integration tests covering:
+* **Test Matrix:** 41 comprehensive unit and integration tests covering:
   - Formatter logic (paragraphs, timecodes, markdown).
   - Scratch lifecycle hygiene, isolated directories, and file lock backoff.
   - Auto-update cadence, bundle detection, and offline handling.
-  - History indexing, search ranking, and persistence.
+  - History indexing, SQLite WAL mode, schema validation, FTS5 snippet ranking, favorite toggling, and legacy JSON auto-migration.
   - URL detection across all supported social platforms.
   - Media processor audio extraction and duration parsing.
   - Config manager read, write, and corrupt JSON restoration.

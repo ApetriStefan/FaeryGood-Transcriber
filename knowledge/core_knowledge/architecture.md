@@ -76,8 +76,8 @@ flowchart TD
     Engine -->|Streaming Utterance Callback| Formatter["faery_app.models.TranscriptFormatter\n(Acoustic Pause & Timestamp Clustering)"]
     Formatter -->|Live Text Streaming| UI
     
-    Engine -->|Completed Output| HistorySub["faery_app.history.HistoryManager\n(Index & Full-Text Search)"]
-    HistorySub --> Disk["Documents/Transcriptions\n(.txt, .md, history.json)"]
+    Engine -->|Completed Output| HistorySub["faery_app.history.HistoryManager\n(SQLite & FTS5 Search)"]
+    HistorySub --> Disk["Documents/Transcriptions (.txt, .md)\n~/.faery_transcriber.db (SQLite WAL)"]
     HistorySub --> UI
     
     Scratch -.->|Auto-Purge on Task Finish / Cancel / Exit| Wipe[("Purge Temp Files (Zero Residual Footprint)")]
@@ -117,9 +117,9 @@ faery_app/
 │   ├── types.py                # RadioTrackType enum
 │   ├── art.py                  # extract_embedded_art (ID3 / mutagen / PIL)
 │   └── controller.py           # RadioStationController (pygame.mixer)
-├── history/                    # Historical transcript repository
+├── history/                    # Historical transcript repository (SQLite & FTS5)
 │   ├── __init__.py
-│   └── history_manager.py      # HistoryRecord & HistoryManager (spoken search)
+│   └── history_manager.py      # HistoryRecord, SearchResult & HistoryManager (SQLite/FTS5)
 ├── utils/                      # OS & platform helpers
 │   ├── __init__.py
 │   ├── system.py               # System utilities (FFmpeg finder, disk space, open folder)
@@ -207,12 +207,51 @@ faery_app/
 
 ### 2.8 History Library & Search Engine (`faery_app.history`)
 - **Primary Symbols:**
-  - `HistoryRecord`, `HistoryManager` in `faery_app/history/history_manager.py`
-- **Responsibilities:**
-  - In-memory indexing and JSON persistence (`history.json`) in the user's `Documents/Transcriptions` folder.
-  - **Full-Text Spoken Search:** Searches across titles, dates, file names, and spoken speech transcript bodies.
-  - **Snippet Highlighting:** Extracts contextual quotes around search query matches (e.g., `💬 "...muffled rhythm of rain..."`).
-  - Supports in-place transcript editing, file renaming (`.txt` and `.md`), and safe record deletion.
+  - `HistoryRecord`, `SearchResult`, `HistoryManager` in `faery_app/history/history_manager.py`
+- **Embedded SQLite Storage Architecture:**
+  - **Database Location:** Backed by an embedded SQLite database persisted at `~/.faery_transcriber.db` (resolved via `constants.DB_PATH`), ensuring crash-safe ACID transactions.
+  - **High-Concurrency WAL Mode:** Initialized with `PRAGMA journal_mode=WAL;` (Write-Ahead Logging), allowing concurrent reader connections without blocking active write operations. Configured with `PRAGMA synchronous=NORMAL;`, `PRAGMA busy_timeout=10000;`, and `PRAGMA foreign_keys=ON;` for data safety and lock resilience.
+  - **Relational Schema (`transcriptions` table):**
+    ```sql
+    CREATE TABLE IF NOT EXISTS transcriptions (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        source_filename TEXT DEFAULT '',
+        duration_str TEXT DEFAULT '--:--',
+        created_at TEXT DEFAULT '',
+        model TEXT DEFAULT '',
+        paragraphs_file TEXT DEFAULT '',
+        timecoded_file TEXT DEFAULT '',
+        markdown_file TEXT DEFAULT '',
+        word_count INTEGER DEFAULT 0,
+        is_favorite INTEGER DEFAULT 0,
+        tags TEXT DEFAULT '',
+        updated_at TEXT DEFAULT ''
+    );
+    ```
+  - **Full-Text Search Engine (`transcriptions_fts` virtual table):**
+    - Built using SQLite's FTS5 virtual table extension with the `unicode61` tokenizer for international character, diacritic, and case-insensitive normalization:
+      ```sql
+      CREATE VIRTUAL TABLE IF NOT EXISTS transcriptions_fts USING fts5(
+          id UNINDEXED,
+          title,
+          content,
+          tokenize = 'unicode61'
+      );
+      ```
+    - **Automated Lifecycle Triggers:**
+      - `trg_transcriptions_delete`: Automatically purges index rows from `transcriptions_fts` upon deletion of corresponding records in `transcriptions`.
+      - `trg_transcriptions_update_title`: Propagates title modifications to the virtual search index.
+    - **Full-Text Content Indexing:** Spoken text content is read directly from disk files (`paragraphs_file` or `markdown_file`) upon insertion or update and indexed into `transcriptions_fts`.
+  - **Query Processing & Contextual Snippets:**
+    - `search_with_snippets(query)` utilizes FTS5 prefix token matching (`"term"*`), BM25-based relevance ranking, and the SQLite `snippet(transcriptions_fts, 2, '', '', '...', 15)` function to return contextual speech quotes (e.g., `💬 "...muffled rhythm of rain..."`).
+    - Multi-tiered fallback evaluates FTS5 matches alongside SQL `LIKE` metadata matching across titles, filenames, models, dates, and tags.
+    - Returns `SearchResult` objects that inherit from `HistoryRecord` while supporting 2-tuple unpacking (`record, snippet = result`) for complete backwards compatibility.
+  - **Seamless Legacy JSON Migration:**
+    - On initialization (`_migrate_legacy_json`), detects legacy JSON history at `~/.faery_transcriptions_history.json`.
+    - If present, deserializes all records, executes atomic insertions and FTS5 indexing, and renames the legacy file to `~/.faery_transcriptions_history.json.bak` to prevent re-importing while safeguarding historical data.
+  - **Disk Synchronization:**
+    - `sync_with_directory(output_dir)` discovers external or untracked transcripts in `Documents/Transcriptions`, indexes newly discovered files, and cleans up records whose backing files no longer exist on disk.
 
 ### 2.9 Platform & System Utilities (`faery_app.utils`)
 - **Primary Symbols:**
@@ -255,3 +294,4 @@ faery_app/
 2. **Scratch Isolation:** No audio extraction routine may write directly to persistent storage. All intermediate media MUST be created inside a `safe_scratch_directory()` context.
 3. **Graceful Standalone Immunity:** Network or development tools (e.g., `git`) MUST query `AutoUpdater.is_standalone_bundle()` and skip execution silently when running under a frozen PyInstaller binary (`sys.frozen`).
 4. **Platform Safety:** Platform-specific modules (such as macOS application registration in `faery_app.utils.macos`) MUST verify the operating system (`sys.platform == 'darwin'`) before executing platform APIs, failing gracefully on unsupported operating systems.
+5. **Database Concurrency & Integrity:** All persistent library access to `~/.faery_transcriber.db` executes under SQLite WAL journal mode with a 10-second busy timeout. Deletions and title updates are transactionally synced with the FTS5 virtual index, and schema migrations preserve user data with automatic `.bak` backups.

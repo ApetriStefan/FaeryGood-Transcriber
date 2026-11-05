@@ -43,6 +43,8 @@ CONFIG_FILE_NAME = ".faery_transcriber_config.json"
 CONFIG_PATH = Path.home() / CONFIG_FILE_NAME
 HISTORY_FILE_NAME = ".faery_transcriptions_history.json"
 HISTORY_PATH = Path.home() / HISTORY_FILE_NAME
+DB_FILE_NAME = ".faery_transcriber.db"
+DB_PATH = Path.home() / DB_FILE_NAME
 
 DEFAULT_OUTPUT_DIR = Path.home() / "Documents" / "Transcriptions"
 

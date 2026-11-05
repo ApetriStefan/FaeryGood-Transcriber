@@ -306,6 +306,174 @@ class TestHistoryManager(unittest.TestCase):
             matched, _ = rec.matches_query("unrelated non-existent query")
             self.assertFalse(matched)
 
+    def test_sqlite_wal_and_schema(self):
+        from app import HistoryManager
+        import sqlite3
+        with tempfile.TemporaryDirectory() as td:
+            db_file = Path(td) / "test_store.db"
+            hm = HistoryManager(history_path=db_file)
+            self.assertTrue(db_file.exists())
+
+            conn = sqlite3.connect(str(db_file))
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA journal_mode;")
+            mode = cursor.fetchone()[0]
+            self.assertEqual(mode.lower(), "wal")
+
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            tables = {row[0] for row in cursor.fetchall()}
+            self.assertIn("transcriptions", tables)
+            self.assertIn("transcriptions_fts", tables)
+            conn.close()
+
+    def test_auto_migration_from_legacy_json(self):
+        from app import HistoryManager
+        import json
+        with tempfile.TemporaryDirectory() as td:
+            temp_path = Path(td)
+            legacy_json = temp_path / "legacy_history.json"
+            dummy_data = [
+                {
+                    "id": "migrated_1",
+                    "title": "Migrated Reel",
+                    "source_filename": "reel.mp4",
+                    "duration_str": "00:45",
+                    "created_at": "2026-10-15 12:00",
+                    "model": "small.en",
+                    "paragraphs_file": "",
+                    "timecoded_file": "",
+                    "markdown_file": "",
+                    "word_count": 42,
+                }
+            ]
+            legacy_json.write_text(json.dumps(dummy_data), encoding="utf-8")
+
+            hm = HistoryManager(history_path=legacy_json)
+            self.assertEqual(len(hm.records), 1)
+            self.assertEqual(hm.records[0].id, "migrated_1")
+            self.assertEqual(hm.records[0].title, "Migrated Reel")
+
+            self.assertFalse(legacy_json.exists())
+            bak_file = temp_path / "legacy_history.json.bak"
+            self.assertTrue(bak_file.exists())
+
+    def test_fts5_search_and_snippets(self):
+        from app import HistoryManager, HistoryRecord, SearchResult
+        with tempfile.TemporaryDirectory() as td:
+            temp_path = Path(td)
+            db_file = temp_path / "fts_test.db"
+            hm = HistoryManager(history_path=db_file)
+
+            p1 = temp_path / "botanical_paragraphs.txt"
+            p1.write_text("Infusing organic lavender blossoms with sweet almond elixir.", encoding="utf-8")
+
+            p2 = temp_path / "herbal_paragraphs.txt"
+            p2.write_text("Harvesting wild rosemary needles under the waxing moon.", encoding="utf-8")
+
+            r1 = HistoryRecord(
+                id="rec_lavender",
+                title="Botanical Salve",
+                source_filename="salve.mp4",
+                duration_str="01:30",
+                created_at="2026-10-10 10:00",
+                model="small.en",
+                paragraphs_file=str(p1),
+                timecoded_file="",
+                markdown_file="",
+                word_count=8,
+            )
+            r2 = HistoryRecord(
+                id="rec_rosemary",
+                title="Herbal Moon Ritual",
+                source_filename="ritual.mp4",
+                duration_str="02:00",
+                created_at="2026-10-11 11:00",
+                model="small.en",
+                paragraphs_file=str(p2),
+                timecoded_file="",
+                markdown_file="",
+                word_count=8,
+            )
+            hm.add_or_update(r1)
+            hm.add_or_update(r2)
+
+            # 1. Search for "lavender" -> matches r1
+            results = hm.search_with_snippets("lavender")
+            self.assertEqual(len(results), 1)
+            res = results[0]
+
+            # Test SearchResult direct attributes
+            self.assertEqual(res.id, "rec_lavender")
+            self.assertEqual(res.title, "Botanical Salve")
+            self.assertIsNotNone(res.snippet)
+            self.assertIn("lavender", res.snippet.lower())
+
+            # Test SearchResult 2-tuple unpacking
+            rec_unpacked, snip_unpacked = res
+            self.assertEqual(rec_unpacked.id, "rec_lavender")
+            self.assertIn("lavender", snip_unpacked.lower())
+
+            # 2. Multi-token search across title and content: "moon rosemary" -> matches r2
+            results_m = hm.search_with_snippets("moon rosemary")
+            self.assertEqual(len(results_m), 1)
+            self.assertEqual(results_m[0].id, "rec_rosemary")
+
+            # 3. Empty query returns all records
+            all_res = hm.search_with_snippets("")
+            self.assertEqual(len(all_res), 2)
+            for item in all_res:
+                self.assertIsNone(item.snippet)
+
+            # 4. Non-matching query returns empty list
+            no_res = hm.search_with_snippets("nonexistent_apothecary_keyword_xyz")
+            self.assertEqual(len(no_res), 0)
+
+    def test_favorite_and_delete_operations(self):
+        from app import HistoryManager, HistoryRecord
+        with tempfile.TemporaryDirectory() as td:
+            temp_path = Path(td)
+            db_file = temp_path / "ops_test.db"
+            hm = HistoryManager(history_path=db_file)
+
+            p_file = temp_path / "item_paragraphs.txt"
+            p_file.write_text("Content to be deleted.", encoding="utf-8")
+
+            r1 = HistoryRecord(
+                id="rec_fav",
+                title="Favorite Test",
+                source_filename="fav.mp4",
+                duration_str="01:00",
+                created_at="2026-10-01 10:00",
+                model="small.en",
+                paragraphs_file=str(p_file),
+                timecoded_file="",
+                markdown_file="",
+                word_count=4,
+            )
+            hm.add_or_update(r1)
+            self.assertFalse(hm.get_by_id("rec_fav").is_favorite)
+
+            # Toggle favorite ON
+            new_state = hm.toggle_favorite("rec_fav")
+            self.assertTrue(new_state)
+            self.assertTrue(hm.get_by_id("rec_fav").is_favorite)
+
+            # Toggle favorite OFF
+            new_state = hm.toggle_favorite("rec_fav")
+            self.assertFalse(new_state)
+            self.assertFalse(hm.get_by_id("rec_fav").is_favorite)
+
+            # Test delete with file purge
+            self.assertTrue(p_file.exists())
+            del_success = hm.delete("rec_fav", delete_files=True)
+            self.assertTrue(del_success)
+            self.assertIsNone(hm.get_by_id("rec_fav"))
+            self.assertEqual(len(hm.records), 0)
+            self.assertFalse(p_file.exists(), "Associated file should be purged on delete")
+
+            # Delete non-existent record returns False
+            self.assertFalse(hm.delete("non_existent_id"))
+
 
 
 class TestGUIComponents(unittest.TestCase):

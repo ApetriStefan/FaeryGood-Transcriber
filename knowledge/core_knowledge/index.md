@@ -51,6 +51,7 @@ The single source of truth for repository documentation structure:
 | **Self-Healing Launcher** | Platform batch/shell scripts (`Run_Windows.bat`, `Run_Mac.command`) that detect Python, self-provision virtual environments, and alert users via native GUI dialogs. |
 | **macOS App Registration** | Automated subsystem (`ensure_macos_app_installed`, `install_app_bundle`) installing `.app` bundles into `/Applications` (or `~/Applications`), clearing quarantine flags, and registering with LaunchServices for Spotlight indexing. |
 | **Faery Radio** | Embedded ambient music player (104.9 The Grift FM) with GTA-style station bumpers. |
+| **SQLite Database & FTS5** | Embedded database (`~/.faery_transcriber.db`) configured with WAL journal mode (`PRAGMA journal_mode=WAL`) and FTS5 full-text search virtual table (`unicode61` tokenizer), providing crash-safe ACID persistence and sub-millisecond spoken word indexing with automatic migration from legacy JSON. |
 
 ---
 
@@ -58,8 +59,8 @@ The single source of truth for repository documentation structure:
 
 | Area | Status | Last updated | Notes |
 |---|---|---|---|
-| `architecture.md` | 🟢 Complete | 2026-11-05 | Modular `faery_app` package architecture, scratch lifecycle, and launcher specs |
-| `components/` | 🟢 Complete | 2026-11-05 | Modular subsystem contracts mapped to `faery_app/` paths and `app.py` facade |
-| `infrastructure/` | 🟢 Complete | 2026-11-05 | Windows & Mac self-healing launchers, PyInstaller specs, 37 passing unit/integration tests |
-| `processes/` | 🟢 Complete | 2026-11-05 | Friend delivery, 37-test verification routine, scratch hygiene SOPs |
+| `architecture.md` | 🟢 Complete | 2026-11-05 | Modular `faery_app` package architecture, scratch lifecycle, SQLite FTS5 database, and launcher specs |
+| `components/` | 🟢 Complete | 2026-11-05 | Modular subsystem contracts mapped to `faery_app/` paths, SQLite FTS5 history, and `app.py` facade |
+| `infrastructure/` | 🟢 Complete | 2026-11-05 | Windows & Mac self-healing launchers, PyInstaller specs, 41 passing unit/integration tests |
+| `processes/` | 🟢 Complete | 2026-11-05 | Friend delivery, 41-test verification routine, scratch hygiene SOPs |
 | `team_and_stakeholders/` | 🟢 Complete | 2026-11-05 | Contacts, team structure, and ownership map populated |

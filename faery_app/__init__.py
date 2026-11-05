@@ -34,7 +34,7 @@ from faery_app.radio.art import extract_embedded_art
 from faery_app.radio.controller import RadioStationController
 
 # History Subsystem
-from faery_app.history.history_manager import HistoryRecord, HistoryManager
+from faery_app.history.history_manager import HistoryRecord, HistoryManager, SearchResult
 
 # System & OS Integration Utils
 from faery_app.utils.system import (
@@ -77,6 +77,8 @@ __all__ = [
     "CONFIG_PATH",
     "HISTORY_FILE_NAME",
     "HISTORY_PATH",
+    "DB_FILE_NAME",
+    "DB_PATH",
     "DEFAULT_OUTPUT_DIR",
     "SUPPORTED_MEDIA_EXTENSIONS",
     "MODEL_DISPLAY_NAMES",
@@ -131,6 +133,7 @@ __all__ = [
     # History
     "HistoryRecord",
     "HistoryManager",
+    "SearchResult",
     # Utils
     "get_verified_ffmpeg_exe",
     "check_free_disk_space",

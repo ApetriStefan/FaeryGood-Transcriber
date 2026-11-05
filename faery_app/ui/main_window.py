@@ -1160,11 +1160,7 @@ class FaeryTranscriberApp(ctk.CTk):
             widget.destroy()
 
         query = filter_text.strip()
-        matching_results: List[Tuple[HistoryRecord, Optional[str]]] = []
-        for r in records:
-            matched, snippet = r.matches_query(query)
-            if matched:
-                matching_results.append((r, snippet))
+        matching_results = self.history.search_with_snippets(query)
 
         total_count = len(records)
         match_count = len(matching_results)

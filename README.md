@@ -25,10 +25,12 @@ A delightful, 100% private, on-device desktop transcription studio and historica
   * **`📄 Clean Paragraphs`:** Automatically detects natural speech pauses ($\ge 1.0$s) to format speech into clean, readable paragraphs ready to paste into Instagram captions, newsletters, or blog posts.
   * **`⏱️ Timecoded (YouTube)`:** Automatically formats speech timestamps (`[00:15] ...`) ready to paste directly into YouTube video descriptions as instant clickable video chapters.
   * **`📝 Raw Text`:** Unformatted, continuous text stream ideal for note-taking apps or LLM prompts.
-* **📜 Persistent History Library & Spoken Full-Text Search:**
+* **📜 Persistent History Library & Instant FTS5 Spoken-Word Search:**
   * View, search, rename, edit, copy, and delete past transcripts in the **`📜 History`** tab (`⌘2` / `Ctrl+2`).
-  * **Full-Text Spoken Search:** Search not only by title or date, but **by any word or phrase spoken in the audio**!
+  * **Crash-Safe Embedded SQLite Database:** All transcripts are persisted in `~/.faery_transcriber.db` with Write-Ahead Logging (`WAL` mode) for robust, atomic, corruption-proof operations.
+  * **Instant SQLite FTS5 Full-Text Search:** Powered by an SQLite FTS5 virtual table with `unicode61` tokenization—enabling lightning-fast spoken word search not just by title or date, but **by any word or phrase spoken in the audio**!
   * **Speech Snippet Previews:** Search cards highlight the exact sentence from the transcript where the spoken words were detected (e.g. `💬 "...save for the muffled rhythm of rain..."`).
+  * **Seamless Legacy Migration:** Automatically upgrades older JSON histories (`~/.faery_transcriptions_history.json`) into SQLite on startup, keeping a `.bak` copy for safety.
 * **📻 Ambient Faery Radio (104.9 The Grift FM):** Toggle on the radio switch (`⌘R` / `Ctrl+R`) to summon a retro-modern ambient music player docked gracefully at the bottom of the screen. Features 9 original apothecary tracks, GTA-style DJ station bumpers, high-probability satirical legal disclaimers, embedded album artwork, click-to-seek timeline controls, and full keyboard media navigation. Completely disappears when toggled off to keep your workspace 100% clean.
 * **🔐 Built-in "Social Login" Cookie Bridge:** Safely transcribe login-walled Instagram Reels or Facebook videos using your existing browser cookies (Safari, Chrome, Firefox, Edge, Brave) without ever sharing your password.
 * **🔄 Automatic Weekly Background Updates:** When running from a git clone, the app automatically checks for and pulls updates from GitHub every 7 days upon launch, without ever interrupting your workflow.
@@ -107,7 +109,7 @@ flowchart LR
 
 ---
 
-### Workflow 2: Transcribe a Local Video, Podcast, or Voice Memo
+## Workflow 2: Transcribe a Local Video, Podcast, or Voice Memo
 
 1. Click **`📁 Select Video or Audio…`** (or press `⌘O` / `Ctrl+O`).
 2. Select any media file on your computer (`.mp4`, `.mov`, `.m4a`, `.mp3`, `.wav`, `.mkv`, `.aac`, `.flac`).
@@ -119,7 +121,7 @@ flowchart LR
 
 ---
 
-### Workflow 3: Explore & Search Your Library (History Tab)
+## Workflow 3: Explore & Search Your Library (History Tab)
 
 1. Click the **`📜 History`** tab at the top (or press `⌘2` / `Ctrl+2`).
 2. All your past transcripts appear in a clean, scrollable card list on the left.
@@ -220,6 +222,8 @@ Faery Good Transcriber is engineered to be self-contained, robust, and completel
    When executed from a git clone, the app checks if 7 days have elapsed since the last check. If an internet connection is available, it pulls updates in a non-blocking daemon thread. Standalone frozen builds safely bypass this check.
 6. **Modular Package Architecture (`faery_app/`):**  
    The application is organized into a clean, modular Python package (`faery_app/`) with cleanly decoupled subsystems (`config`, `lifecycle`, `models`, `media`, `transcription`, `radio`, `history`, `utils`, `ui`), fronted by `app.py` as a lightweight backwards-compatible facade and entry point.
+7. **Embedded SQLite Database & Instant FTS5 Search:**  
+   Past transcript sessions are stored in an embedded SQLite database (`~/.faery_transcriber.db`) operating under Write-Ahead Logging (`WAL` mode) with `PRAGMA synchronous=NORMAL` and busy timeout handling for crash safety. Spoken transcripts are indexed in an SQLite FTS5 virtual table with `unicode61` tokenization, enabling sub-millisecond full-text queries, BM25-based relevance ranking, and contextual snippet highlighting. Legacy JSON libraries (`~/.faery_transcriptions_history.json`) are seamlessly auto-migrated on startup with automatic `.bak` backup creation.
 
 For comprehensive developer documentation and architectural specifications, explore the repository's **Core-Knowledge** base:
 * 🧭 **[Core-Knowledge Index](knowledge/core_knowledge/index.md)** — Architectural routing table and folder contracts.
@@ -239,7 +243,7 @@ The repository includes an extensive automated test suite covering all critical 
 # Activate your virtual environment, then run:
 python test_app.py
 ```
-*(All 37 automated unit and integration tests execute in under 6 seconds).*
+*(All 41 automated unit and integration tests execute in under 6 seconds).*
 
 ### Building Standalone macOS App & DMG
 If you want to create a native macOS drag-and-drop installer:
@@ -288,11 +292,11 @@ TranscriptionEngine/
 │   ├── media/                  # 🎬 MediaProcessor (FFmpeg 16kHz WAV) & OnlineMediaFetcher (yt-dlp)
 │   ├── transcription/          # 🧠 TranscriptionEngine (faster-whisper local CPU inference)
 │   ├── radio/                  # 📻 RadioStationController (104.9 Grift FM) & album art
-│   ├── history/                # 📜 HistoryManager (JSON indexing & spoken full-text search)
+│   ├── history/                # 📜 HistoryManager (SQLite & FTS5 full-text search)
 │   ├── utils/                  # 🛠️ System utilities & zero-sudo macOS application installer
 │   └── ui/                     # 🌸 CustomTkinter presentation layer (views, dialogs, menus, dock)
 ├── requirements.txt            # 📦 Production Python dependencies
-├── test_app.py                 # 🧪 Automated unit & integration test suite (37 tests)
+├── test_app.py                 # 🧪 Automated unit & integration test suite (41 tests)
 ├── Run_Windows.bat             # 🪟 1-Click self-healing Windows launcher
 ├── Run_Mac.command             # 🍎 1-Click self-healing macOS launcher & auto-installer to Applications
 ├── Build_Mac_App.command       # 🍏 1-Click standalone .app bundle builder

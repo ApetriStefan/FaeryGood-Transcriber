@@ -52,7 +52,7 @@ from faery_app.radio.art import extract_embedded_art
 from faery_app.radio.controller import RadioStationController
 
 # Re-export History Subsystem
-from faery_app.history.history_manager import HistoryRecord, HistoryManager
+from faery_app.history.history_manager import HistoryRecord, HistoryManager, SearchResult
 
 # Re-export System & Platform Utils
 from faery_app.utils.system import (
