@@ -52,6 +52,48 @@ for pkg in critical_pkgs:
     except Exception as e:
         print(f"[FaeryTranscriber.spec] Notice: collect_all for '{pkg}' returned: {e}")
 
+# Ensure modular faery_app package and all submodules are bundled cleanly
+hiddenimports += [
+    "faery_app",
+    "faery_app.constants",
+    "faery_app.config",
+    "faery_app.config.config_manager",
+    "faery_app.lifecycle",
+    "faery_app.lifecycle.scratch",
+    "faery_app.lifecycle.updater",
+    "faery_app.models",
+    "faery_app.models.metadata",
+    "faery_app.models.formatter",
+    "faery_app.media",
+    "faery_app.media.processor",
+    "faery_app.media.online_fetcher",
+    "faery_app.transcription",
+    "faery_app.transcription.engine",
+    "faery_app.radio",
+    "faery_app.radio.types",
+    "faery_app.radio.art",
+    "faery_app.radio.controller",
+    "faery_app.history",
+    "faery_app.history.history_manager",
+    "faery_app.utils",
+    "faery_app.utils.system",
+    "faery_app.utils.macos",
+    "faery_app.ui",
+    "faery_app.ui.assets",
+    "faery_app.ui.components",
+    "faery_app.ui.components.segmented_button",
+    "faery_app.ui.dialogs",
+    "faery_app.ui.dialogs.quick_guide",
+    "faery_app.ui.dialogs.about",
+    "faery_app.ui.dialogs.overwrite_prompt",
+    "faery_app.ui.views",
+    "faery_app.ui.views.transcribe_view",
+    "faery_app.ui.views.history_view",
+    "faery_app.ui.views.radio_dock",
+    "faery_app.ui.menus",
+    "faery_app.ui.main_window",
+]
+
 win_icon = os.path.join(assets_dir, "faery_icon.ico") if os.path.exists(os.path.join(assets_dir, "faery_icon.ico")) else None
 mac_icon = os.path.join(assets_dir, "faery_icon.icns") if os.path.exists(os.path.join(assets_dir, "faery_icon.icns")) else None
 

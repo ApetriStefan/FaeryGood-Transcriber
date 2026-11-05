@@ -3,7 +3,8 @@
 > **Repository Type:** Standalone Desktop Application (CustomTkinter GUI)
 > **Primary Language:** Python 3.10+
 > **Target Platforms:** Windows 10/11, macOS Sonoma/Ventura/Monterey
-> **Last Updated:** 2026-11-03
+> **Architecture:** Modular package (`faery_app/`) with backwards-compatible facade (`app.py`)
+> **Last Updated:** 2026-11-05
 
 ---
 
@@ -17,9 +18,9 @@ Faery Good Transcriber is a standalone, privacy-first desktop application design
 
 | Location | Has answers about | Does NOT have | Read code instead for |
 |---|---|---|---|
-| [`architecture.md`](architecture.md) | System overview, threading model, audio pipeline, UI layout, `ScratchLifecycleManager`, `AutoUpdater`, self-healing launchers | Line-level event bindings | Function bodies in `app.py` |
-| [`components/_about.md`](components/_about.md) | Architectural modules: GUI, inference engine, media extractor, scratch manager, auto-updater, radio, formatting | Full source implementations | Specific widget callbacks |
-| [`infrastructure/_about.md`](infrastructure/_about.md) | Virtualenv provisioning, PyInstaller bundling specs, platform-specific launchers (`Run_Windows.bat`, `Run_Mac.command`), test coverage | Core UI logic | Build script internals |
+| [`architecture.md`](architecture.md) | System overview, modular `faery_app` architecture, threading model, audio pipeline, UI layout, `ScratchLifecycleManager`, `AutoUpdater`, self-healing launchers | Line-level event bindings | Function bodies in `faery_app/` and `app.py` |
+| [`components/_about.md`](components/_about.md) | Architectural modules: GUI views, inference engine, media extractor, scratch manager, auto-updater, radio, formatting, contracts | Full source implementations | Specific widget callbacks |
+| [`infrastructure/_about.md`](infrastructure/_about.md) | Virtualenv provisioning, PyInstaller bundling specs (`FaeryTranscriber.spec`), platform-specific launchers (`Run_Windows.bat`, `Run_Mac.command`), test coverage (37 tests) | Core UI logic | Build script internals |
 | [`processes/_about.md`](processes/_about.md) | Quality verification, scratch hygiene assurance, friend delivery steps, release workflows | Personal notes | Git commit logs |
 | [`team_and_stakeholders/`](team_and_stakeholders/_about.md) | Contact registry, team structure, ownership map, stakeholder roles | Code implementation | Repository issues |
 
@@ -29,8 +30,8 @@ Faery Good Transcriber is a standalone, privacy-first desktop application design
 
 The single source of truth for repository documentation structure:
 
-- **`components/`**: Defines the system's software modules, their class contracts, boundaries, and thread invariants.
-- **`infrastructure/`**: Documents execution runtimes, platform-specific launchers, PyInstaller specs, and testing harnesses.
+- **`components/`**: Defines the system's software modules, their class contracts, boundaries, and thread invariants across `faery_app/`.
+- **`infrastructure/`**: Documents execution runtimes, platform-specific launchers, PyInstaller specs, and testing harnesses (37 automated tests).
 - **`processes/`**: Standard operating procedures, test verification routines, packaging workflows, and user delivery steps.
 - **`team_and_stakeholders/`**: The authoritative registry for people, contact info, team structure, and asset ownership. *(The ONLY directory where personal names may appear).*
 
@@ -41,7 +42,9 @@ The single source of truth for repository documentation structure:
 | Term | Definition |
 |---|---|
 | **Faery Good Transcriber** | The official desktop transcription application. |
-| **faster-whisper** | CTranslate2-accelerated implementation of OpenAI Whisper running 100% locally on CPU. |
+| **faery_app** | The modular Python package containing decoupled subsystems (`config`, `lifecycle`, `models`, `media`, `transcription`, `radio`, `history`, `utils`, `ui`). |
+| **app.py** | Backwards-compatible public facade re-exporting all symbols and bootstrapping application startup. |
+| **faster-whisper** | CTranslate2-accelerated implementation of OpenAI Whisper running 100% locally on CPU (`int8` quantization). |
 | **yt-dlp** | Standalone online media extraction tool used to fetch temporary audio streams from social URLs. |
 | **ScratchLifecycleManager** | Subsystem providing guaranteed failsafe cleanup of temporary audio files across normal exits, cancellations, system signals, and crashes. |
 | **AutoUpdater** | Background component checking for updates every 7 days when running in a git clone, safely bypassed in standalone frozen bundles. |
@@ -55,8 +58,8 @@ The single source of truth for repository documentation structure:
 
 | Area | Status | Last updated | Notes |
 |---|---|---|---|
-| `architecture.md` | 🟢 Complete | 2026-11-03 | Full system architecture, scratch lifecycle, and launcher specs |
-| `components/` | 🟢 Complete | 2026-11-03 | GUI, inference engine, scratch manager, updater, radio |
-| `infrastructure/` | 🟢 Complete | 2026-11-03 | Windows & Mac self-healing launchers, PyInstaller specs |
-| `processes/` | 🟢 Complete | 2026-11-03 | Friend delivery, test verification, scratch hygiene routines |
-| `team_and_stakeholders/` | 🟢 Complete | 2026-11-03 | Contacts, team structure, and ownership map populated |
+| `architecture.md` | 🟢 Complete | 2026-11-05 | Modular `faery_app` package architecture, scratch lifecycle, and launcher specs |
+| `components/` | 🟢 Complete | 2026-11-05 | Modular subsystem contracts mapped to `faery_app/` paths and `app.py` facade |
+| `infrastructure/` | 🟢 Complete | 2026-11-05 | Windows & Mac self-healing launchers, PyInstaller specs, 37 passing unit/integration tests |
+| `processes/` | 🟢 Complete | 2026-11-05 | Friend delivery, 37-test verification routine, scratch hygiene SOPs |
+| `team_and_stakeholders/` | 🟢 Complete | 2026-11-05 | Contacts, team structure, and ownership map populated |

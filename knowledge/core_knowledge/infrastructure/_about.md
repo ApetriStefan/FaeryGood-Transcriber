@@ -4,11 +4,12 @@ This directory documents the deployment, packaging, execution environments, self
 
 ---
 
-## 1. Runtime Environments
+## 1. Runtime Environments & Code Structure
 
 * **Supported Python Runtimes:** Python 3.10 to Python 3.13 (x86_64 on Windows; x86_64 and ARM64 Apple Silicon on macOS).
 * **Isolation Model:** Dedicated `.venv` virtual environment isolated inside the application root directory.
 * **FFmpeg Dependency:** Statically provided through `imageio_ffmpeg` to eliminate any requirement for system-level FFmpeg installation.
+* **Modular Package Architecture:** The application code is organized as the `faery_app/` Python package with decoupled subpackages (`config`, `lifecycle`, `models`, `media`, `transcription`, `radio`, `history`, `utils`, `ui`). The root `app.py` acts as a public re-export facade and bootstrap entry point. Both `python app.py` and `python -m faery_app` are supported execution models.
 
 ---
 
@@ -40,11 +41,12 @@ This directory documents the deployment, packaging, execution environments, self
 ## 3. Packaging & Standalone Bundling
 
 * **Build Specification:** `FaeryTranscriber.spec` using PyInstaller 6.x.
+* **Entry Point:** Targets `app.py` as the top-level script, collecting all modules under `faery_app/` as hidden imports.
 * **Windowed GUI:** Configured with `console=False` to prevent extraneous command prompt windows on end-user machines.
 * **Asset Bundling:**
-  - Radio audio tracks (`assets/radio/tracks/`) and bumpers (`assets/radio/bumpers/`).
-  - Warm UI theme JSON (`assets/faery_warm_theme.json`).
-  - Brand icons (`assets/icon.png`, `assets/icon.ico`, `assets/icon.icns`).
+  - Radio audio tracks (`assets/music/`) and bumpers (`assets/announcer/`).
+  - Warm UI theme JSON (`assets/faery_good_theme.json`).
+  - Brand icons (`assets/faery_icon.png`, `assets/faery_icon.ico`, `assets/faery_icon.icns`).
   - Bundled binary dependencies (`imageio_ffmpeg` static FFmpeg executable).
 * **Standalone Immunity:** In frozen binary mode, `sys.frozen` evaluates to `True`, automatically instructing `AutoUpdater` to skip Git execution.
 * **macOS Application Registration Subsystem (`ensure_macos_app_installed`):**
@@ -59,10 +61,18 @@ This directory documents the deployment, packaging, execution environments, self
 ## 4. Test Suite & Quality Verification
 
 * **Framework:** Standard library `unittest` (`test_app.py`).
+* **Status:** 37 passing unit and integration tests (0 failures, 0 errors).
+* **Execution:**
+  ```bash
+  python -m unittest test_app.py
+  ```
 * **Test Matrix:** 37 comprehensive unit and integration tests covering:
   - Formatter logic (paragraphs, timecodes, markdown).
-  - Scratch lifecycle hygiene and file lock backoff.
+  - Scratch lifecycle hygiene, isolated directories, and file lock backoff.
   - Auto-update cadence, bundle detection, and offline handling.
   - History indexing, search ranking, and persistence.
   - URL detection across all supported social platforms.
+  - Media processor audio extraction and duration parsing.
+  - Config manager read, write, and corrupt JSON restoration.
+  - Public facade symbol exports (ensuring `app.py` exposes all classes and helpers identically to `faery_app`).
   - macOS Application Integration (`TestMacOSAppIntegration`): platform guard on non-darwin OS, `.app` bundle hierarchy generation, permission fallback to `~/Applications`, frozen bundle replication, and directory writability validation.

@@ -24,6 +24,9 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, str(Path(__file__).parent))
 
 import imageio_ffmpeg
+import customtkinter as ctk
+from faery_app.ui.dialogs.quick_guide import QuickGuideDialog
+from faery_app.ui.dialogs.about import AboutDialog
 from app import (
     ConfigManager,
     MediaProcessor,
@@ -377,16 +380,20 @@ class TestGUIComponents(unittest.TestCase):
         app._cycle_theme()
         self.assertIn(app.config.appearance_mode, ["System", "Dark", "Light"])
 
-        # Test Dialogs (instantiation without errors)
+        # Test Dialogs (instantiation without errors and keyboard dismiss bindings)
         try:
-            app._show_quick_guide()
+            qg = QuickGuideDialog(app)
+            self.assertTrue(bool(qg.bind("<Escape>")))
+            qg.destroy()
         except Exception as e:
-            self.fail(f"_show_quick_guide failed: {e}")
+            self.fail(f"QuickGuideDialog failed: {e}")
 
         try:
-            app._show_about_dialog()
+            ab = AboutDialog(app)
+            self.assertTrue(bool(ab.bind("<Escape>")))
+            ab.destroy()
         except Exception as e:
-            self.fail(f"_show_about_dialog failed: {e}")
+            self.fail(f"AboutDialog failed: {e}")
 
         # Destroy cleanly
         app.destroy()
@@ -792,6 +799,18 @@ class TestFaeryRadio(unittest.TestCase):
             res = app._on_space_pressed_handler(None) if hasattr(app, "_on_space_pressed_handler") else None
             # If focus is on Entry, it should return None without intercepting
             self.assertIsNone(res)
+
+            # Test focus inside Text widget
+            mock_text_focus = MagicMock()
+            mock_text_focus.winfo_class.return_value = "Text"
+            app.focus_get = MagicMock(return_value=mock_text_focus)
+            self.assertIsNone(app._on_space_pressed_handler(None))
+
+            # Test focus inside CTkTextbox/CTkEntry instance
+            mock_ctk_focus = MagicMock(spec=ctk.CTkTextbox)
+            mock_ctk_focus.winfo_class.return_value = "CustomWidget"
+            app.focus_get = MagicMock(return_value=mock_ctk_focus)
+            self.assertIsNone(app._on_space_pressed_handler(None))
 
             # 2. When focus is on non-text widget (e.g. Frame / Canvas / Root)
             mock_frame_focus = MagicMock()

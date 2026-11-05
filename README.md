@@ -218,11 +218,13 @@ Faery Good Transcriber is engineered to be self-contained, robust, and completel
    All temporary audio processing and online downloads occur inside isolated scratch directories (`faery_transcribe_*`). The lifecycle manager binds to application exit, cancellation handlers, and POSIX/Windows signals (`SIGTERM`, `SIGINT`) to guarantee that temporary audio files are purged immediately under all circumstances.
 5. **Background Self-Updating (`AutoUpdater`):**  
    When executed from a git clone, the app checks if 7 days have elapsed since the last check. If an internet connection is available, it pulls updates in a non-blocking daemon thread. Standalone frozen builds safely bypass this check.
+6. **Modular Package Architecture (`faery_app/`):**  
+   The application is organized into a clean, modular Python package (`faery_app/`) with cleanly decoupled subsystems (`config`, `lifecycle`, `models`, `media`, `transcription`, `radio`, `history`, `utils`, `ui`), fronted by `app.py` as a lightweight backwards-compatible facade and entry point.
 
 For comprehensive developer documentation and architectural specifications, explore the repository's **Core-Knowledge** base:
 * 🧭 **[Core-Knowledge Index](knowledge/core_knowledge/index.md)** — Architectural routing table and folder contracts.
-* 🏗️ **[System Architecture](knowledge/core_knowledge/architecture.md)** — Deep-dive on threading model, audio pipeline, and scratch lifecycle.
-* 🧩 **[Architectural Components](knowledge/core_knowledge/components/_about.md)** — GUI layer, inference engine, auto-updater, and radio subsystem.
+* 🏗️ **[System Architecture](knowledge/core_knowledge/architecture.md)** — Deep-dive on modular package structure, threading model, audio pipeline, and scratch lifecycle.
+* 🧩 **[Architectural Components](knowledge/core_knowledge/components/_about.md)** — Subsystem contracts across `faery_app/` and facade mappings.
 * 🛠️ **[Infrastructure & Packaging](knowledge/core_knowledge/infrastructure/_about.md)** — Self-healing launchers, PyInstaller specs, and DMG creation.
 * 📋 **[Processes & Quality Verification](knowledge/core_knowledge/processes/_about.md)** — Test verification routines and friend delivery SOPs.
 
@@ -275,7 +277,20 @@ If you want to create a native macOS drag-and-drop installer:
 TranscriptionEngine/
 ├── WELCOME_FRIEND.md           # 🌸 Friendly 1-minute visual guide for friends & creators
 ├── README.md                   # 📖 Complete user documentation, architecture & guides
-├── app.py                      # 💻 Complete standalone application code & CustomTkinter GUI
+├── app.py                      # 💻 Backwards-compatible public facade & application entry point
+├── faery_app/                  # 🏰 Modular application package
+│   ├── __init__.py             # 📦 Root package initializer & public exports
+│   ├── __main__.py             # 🚀 Module entry point (python -m faery_app)
+│   ├── constants.py            # 🎨 Visual themes, colors, audio playlists & defaults
+│   ├── config/                 # ⚙️ Persistent configuration manager (config.json)
+│   ├── lifecycle/              # 🧹 ScratchLifecycleManager (sandbox hygiene) & AutoUpdater
+│   ├── models/                 # 📄 Domain models (Metadata, Segments) & TranscriptFormatter
+│   ├── media/                  # 🎬 MediaProcessor (FFmpeg 16kHz WAV) & OnlineMediaFetcher (yt-dlp)
+│   ├── transcription/          # 🧠 TranscriptionEngine (faster-whisper local CPU inference)
+│   ├── radio/                  # 📻 RadioStationController (104.9 Grift FM) & album art
+│   ├── history/                # 📜 HistoryManager (JSON indexing & spoken full-text search)
+│   ├── utils/                  # 🛠️ System utilities & zero-sudo macOS application installer
+│   └── ui/                     # 🌸 CustomTkinter presentation layer (views, dialogs, menus, dock)
 ├── requirements.txt            # 📦 Production Python dependencies
 ├── test_app.py                 # 🧪 Automated unit & integration test suite (37 tests)
 ├── Run_Windows.bat             # 🪟 1-Click self-healing Windows launcher
@@ -297,14 +312,13 @@ TranscriptionEngine/
 │   ├── faery_sprig_*.png       # 🌱 Botanical herbal sprig section icon
 │   └── faery_good_theme.json   # 🎨 CustomTkinter theme matching FaeryGood.com
 └── knowledge/                  # 🧭 Authoritative Core-Knowledge Repository
-    ├── core_knowledge/         # 🏛️ Architecture, components, infrastructure & processes
-    │   ├── architecture.md     # 🏗️ System overview, threading & scratch lifecycle
-    │   ├── index.md            # 🗺️ Routing table & documentation contracts
-    │   ├── components/         # 🧩 Architectural subsystem contracts
-    │   ├── infrastructure/     # 🛠️ Launchers, packaging & test infrastructure
-    │   ├── processes/          # 📋 QA procedures & friend delivery steps
-    │   └── team_and_stakeholders/ # 👥 Team registry, contacts & ownership map
-    └── private_knowledge/      # 🔒 Private scratch & raw data
+    └── core_knowledge/         # 🏛️ Architecture, components, infrastructure & processes
+        ├── architecture.md     # 🏗️ System overview, modular architecture & scratch lifecycle
+        ├── index.md            # 🗺️ Routing table & documentation contracts
+        ├── components/         # 🧩 Architectural subsystem contracts
+        ├── infrastructure/     # 🛠️ Launchers, packaging & test infrastructure
+        ├── processes/          # 📋 QA procedures & friend delivery steps
+        └── team_and_stakeholders/ # 👥 Team registry, contacts & ownership map
 ```
 
 ---
