@@ -32,6 +32,11 @@ class MenuBuilder:
             command=app._on_select_file_clicked,
         )
         file_menu.add_command(
+            label="Record from Microphone (Start / Stop)",
+            accelerator=f"{mod_sym}+D",
+            command=app._on_record_mic_clicked,
+        )
+        file_menu.add_command(
             label="Paste Online Video / Reel Link",
             accelerator=f"{mod_sym}+L",
             command=app._on_paste_url_clicked,
@@ -164,6 +169,8 @@ class MenuBuilder:
 
             # Application actions
             app.bind(f"<{mod}-Key-o>", lambda e: app._on_select_file_clicked())
+            app.bind(f"<{mod}-Key-d>", lambda e: app._on_record_mic_clicked())
+            app.bind(f"<{mod}-Key-D>", lambda e: app._on_record_mic_clicked())
             app.bind(f"<{mod}-Key-l>", lambda e: app._on_paste_url_clicked())
             app.bind(f"<{mod}-Key-O>", lambda e: app._on_open_folder_clicked())
             app.bind(f"<{mod}-Shift-Key-O>", lambda e: app._on_open_folder_clicked())

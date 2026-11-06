@@ -13,6 +13,9 @@ from pathlib import Path
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 # Suppress pygame community banner
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
+# Prevent Intel OpenMP threads (ctranslate2) from busy-waiting and burning CPU / heat between chunks
+os.environ["KMP_BLOCKTIME"] = "0"
+os.environ["OMP_WAIT_POLICY"] = "PASSIVE"
 
 # Windows High-DPI awareness initialization
 if sys.platform == "win32":
@@ -60,6 +63,7 @@ COOKIE_BROWSER_OPTIONS = {
     "Auto / Public (Recommended)": None,
     "Safari (macOS)": "safari",
     "Chrome": "chrome",
+    "Brave": "brave",
     "Firefox": "firefox",
     "Edge": "edge",
 }

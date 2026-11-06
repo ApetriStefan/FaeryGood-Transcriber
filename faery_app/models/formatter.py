@@ -71,7 +71,7 @@ class TranscriptFormatter:
 
     @staticmethod
     def to_timecoded(segments: List[TranscriptSegment]) -> str:
-        """Formats each segment with its timestamp [MM:SS] on separate lines (YouTube format)."""
+        """Formats each segment with its timestamp [MM:SS] on separate lines."""
         if not segments:
             return ""
         return "\n".join(f"[{seg.formatted_timestamp}] {seg.text}" for seg in segments)

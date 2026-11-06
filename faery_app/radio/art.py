@@ -18,7 +18,18 @@ def extract_embedded_art(audio_path: Optional[Path], target_size: Tuple[int, int
     try:
         from PIL import Image
         with open(audio_path, "rb") as f:
-            data = f.read(5 * 1024 * 1024)  # Read up to 5MB to inspect ID3 header
+            header = f.read(10)
+            if len(header) == 10 and header[:3] == b"ID3":
+                tag_size = (
+                    ((header[6] & 0x7F) << 21)
+                    | ((header[7] & 0x7F) << 14)
+                    | ((header[8] & 0x7F) << 7)
+                    | (header[9] & 0x7F)
+                )
+                read_len = min(max(tag_size, 65536), 5 * 1024 * 1024)
+                data = header + f.read(read_len)
+            else:
+                data = header + f.read(512 * 1024)
 
         apic_idx = data.find(b"APIC")
         sub = data[apic_idx : apic_idx + 2 * 1024 * 1024] if apic_idx != -1 else data[: 2 * 1024 * 1024]

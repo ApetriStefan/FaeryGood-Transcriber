@@ -184,7 +184,7 @@ class TestMediaProcessorAndHygiene(unittest.TestCase):
             # Read Markdown to verify structure
             md_text = Path(md_path).read_text(encoding="utf-8")
             self.assertIn("# Transcription:", md_text)
-            self.assertIn("YouTube Chapters & Timestamps", md_text)
+            self.assertIn("Timestamped Transcript", md_text)
 
             # Verify no temporary folders with prefix faery_transcribe_ are left in system temp
             temp_sys = Path(tempfile.gettempdir())
@@ -504,6 +504,7 @@ class TestGUIComponents(unittest.TestCase):
         self.assertIsNotNone(app.tab_history)
 
         # Check Transcribe Studio widgets
+        self.assertIsNotNone(app.record_mic_btn)
         self.assertIsNotNone(app.select_file_btn)
         self.assertIsNotNone(app.url_entry)
         self.assertIsNotNone(app.paste_url_btn)
@@ -512,6 +513,7 @@ class TestGUIComponents(unittest.TestCase):
         self.assertIsNotNone(app.model_dropdown)
         self.assertIsNotNone(app.textbox)
         self.assertIsNotNone(app.view_selector)
+        self.assertIn("⏱️ Timestamped", app.view_selector.cget("values"))
         self.assertIsNotNone(app.copy_btn)
         self.assertIsNotNone(app.save_txt_btn)
         self.assertIsNotNone(app.save_md_btn)
@@ -620,7 +622,15 @@ class TestOnlineMediaFetcherAndHygiene(unittest.TestCase):
         cancel_event = threading.Event()
         captured_temp_files = []
 
-        def fake_download_audio_to_temp(url, temp_dir, cancel_event, status_cb=None, progress_cb=None, cookie_browser_label=""):
+        def fake_download_audio_to_temp(
+            url,
+            temp_dir,
+            cancel_event,
+            status_cb=None,
+            progress_cb=None,
+            cookie_browser_label="",
+            cookie_permission_cb=None,
+        ):
             # Generate a temporary downloaded audio file inside temp_dir (simulating yt-dlp)
             dl_path = Path(temp_dir) / "online_source_test.m4a"
             import subprocess
@@ -1110,6 +1120,452 @@ class TestMacOSAppIntegration(unittest.TestCase):
             non_existent_subdir = Path(td) / "sub1" / "sub2"
             self.assertTrue(is_directory_writable(non_existent_subdir))
             self.assertTrue(non_existent_subdir.exists())
+
+
+class TestAuditRemediationAndEnhancements(unittest.TestCase):
+    """Verifies the 6 post-audit fixes and enhancements."""
+
+    def test_microphone_recorder_capture_and_scratch_cleanup(self):
+        from faery_app.media.recorder import MicrophoneRecorder
+        from faery_app.lifecycle.scratch import ScratchLifecycleManager
+        import sounddevice as sd
+
+        mock_stream = MagicMock()
+        with patch.object(sd, "InputStream", return_value=mock_stream):
+            recorder = MicrophoneRecorder()
+            wav_path = recorder.start_recording()
+            self.assertTrue(recorder.is_recording)
+            self.assertTrue(wav_path.exists())
+            self.assertTrue(wav_path.parent.name.startswith("faery_mic_"))
+            self.assertIn(wav_path.parent.resolve(), ScratchLifecycleManager._active_scratch_dirs)
+
+            # Feed 1 second (16,000 samples) of 16-bit mono PCM audio frames
+            synthetic_pcm = b"\x10\x00" * 16000
+            recorder._audio_callback(synthetic_pcm, 16000, None, None)
+
+            out_path, meta = recorder.stop_recording()
+            self.assertFalse(recorder.is_recording)
+            self.assertEqual(out_path, wav_path)
+            self.assertTrue(out_path.exists())
+            self.assertTrue(meta.has_audio)
+            self.assertGreaterEqual(meta.duration_seconds, 0.9)
+            self.assertEqual(meta.format_name, "Microphone WAV")
+
+            temp_dir = wav_path.parent
+            recorder.cleanup()
+            self.assertFalse(wav_path.exists())
+            self.assertFalse(temp_dir.exists())
+            self.assertNotIn(temp_dir.resolve(), ScratchLifecycleManager._active_scratch_dirs)
+
+    def test_brave_cookie_option_and_fallback(self):
+        from faery_app.constants import COOKIE_BROWSER_OPTIONS
+        from faery_app.media.online_fetcher import OnlineMediaFetcher
+        import yt_dlp
+
+        self.assertIn("Brave", COOKIE_BROWSER_OPTIONS)
+        self.assertEqual(COOKIE_BROWSER_OPTIONS["Brave"], "brave")
+
+        captured_opts = []
+
+        class FakeYDL:
+            def __init__(self, opts):
+                captured_opts.append(opts)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                return False
+
+            def extract_info(self, url, download=True):
+                outtmpl = captured_opts[-1]["outtmpl"]
+                target_dir = Path(outtmpl).parent
+                if captured_opts[-1].get("cookiesfrombrowser") == ("brave",):
+                    (target_dir / "online_source_b123.m4a").write_bytes(b"audio_bytes")
+                    return {"id": "b123", "title": "Brave Test Clip", "duration": 5.0}
+                raise Exception("ERROR: Sign in to confirm your age")
+
+        with tempfile.TemporaryDirectory() as td:
+            temp_dir = Path(td)
+            cancel_event = threading.Event()
+            with patch.object(yt_dlp, "YoutubeDL", FakeYDL):
+                # 1. Explicit Brave selection
+                info = OnlineMediaFetcher.download_audio_to_temp(
+                    url="https://www.instagram.com/reel/b123/",
+                    temp_dir=temp_dir,
+                    cancel_event=cancel_event,
+                    cookie_browser_label="Brave",
+                )
+                self.assertEqual(len(captured_opts), 1)
+                self.assertEqual(captured_opts[0].get("cookiesfrombrowser"), ("brave",))
+                self.assertEqual(info.video_id, "b123")
+
+                # 2. Auto fallback when permitted includes Brave
+                captured_opts.clear()
+                info2 = OnlineMediaFetcher.download_audio_to_temp(
+                    url="https://www.instagram.com/reel/b123/",
+                    temp_dir=temp_dir,
+                    cancel_event=cancel_event,
+                    cookie_browser_label="Auto / Public (Recommended)",
+                    cookie_permission_cb=lambda platform: True,
+                )
+                browser_attempts = [opt.get("cookiesfrombrowser") for opt in captured_opts]
+                self.assertIsNone(browser_attempts[0])
+                self.assertIn(("brave",), browser_attempts)
+                self.assertEqual(info2.video_id, "b123")
+
+    def test_auto_cookie_permission_dialog_gating(self):
+        from faery_app.media.online_fetcher import OnlineMediaFetcher
+        import yt_dlp
+
+        captured_opts = []
+
+        class FakeAuthWallYDL:
+            def __init__(self, opts):
+                captured_opts.append(opts)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                return False
+
+            def extract_info(self, url, download=True):
+                outtmpl = captured_opts[-1]["outtmpl"]
+                target_dir = Path(outtmpl).parent
+                if captured_opts[-1].get("cookiesfrombrowser") is not None:
+                    (target_dir / "online_source_auth1.m4a").write_bytes(b"audio_bytes")
+                    return {"id": "auth1", "title": "Auth Clip", "duration": 4.0}
+                raise Exception("ERROR: Sign in to confirm")
+
+        with tempfile.TemporaryDirectory() as td:
+            temp_dir = Path(td)
+            cancel_event = threading.Event()
+            with patch.object(yt_dlp, "YoutubeDL", FakeAuthWallYDL):
+                # 1. Permission denied (False) -> called ONLY once (anonymous), zero browser cookies read
+                captured_opts.clear()
+                with self.assertRaises(RuntimeError):
+                    OnlineMediaFetcher.download_audio_to_temp(
+                        url="https://www.instagram.com/reel/auth1/",
+                        temp_dir=temp_dir,
+                        cancel_event=cancel_event,
+                        cookie_browser_label="Auto / Public (Recommended)",
+                        cookie_permission_cb=lambda platform: False,
+                    )
+                self.assertEqual(len(captured_opts), 1)
+                self.assertNotIn("cookiesfrombrowser", captured_opts[0])
+
+                # 2. Permission callback None -> called ONLY once (anonymous), zero browser cookies read
+                captured_opts.clear()
+                with self.assertRaises(RuntimeError):
+                    OnlineMediaFetcher.download_audio_to_temp(
+                        url="https://www.instagram.com/reel/auth1/",
+                        temp_dir=temp_dir,
+                        cancel_event=cancel_event,
+                        cookie_browser_label="Auto / Public (Recommended)",
+                        cookie_permission_cb=None,
+                    )
+                self.assertEqual(len(captured_opts), 1)
+                self.assertNotIn("cookiesfrombrowser", captured_opts[0])
+
+                # 3. Permission granted (True) -> retries with browser cookies and succeeds
+                captured_opts.clear()
+                info = OnlineMediaFetcher.download_audio_to_temp(
+                    url="https://www.instagram.com/reel/auth1/",
+                    temp_dir=temp_dir,
+                    cancel_event=cancel_event,
+                    cookie_browser_label="Auto / Public (Recommended)",
+                    cookie_permission_cb=lambda platform: True,
+                )
+                self.assertGreaterEqual(len(captured_opts), 2)
+                self.assertNotIn("cookiesfrombrowser", captured_opts[0])
+                self.assertIn("cookiesfrombrowser", captured_opts[1])
+                self.assertEqual(info.video_id, "auth1")
+
+    def test_deno_runtime_discovery(self):
+        from faery_app.media.online_fetcher import OnlineMediaFetcher
+        import yt_dlp
+
+        deno_bin = OnlineMediaFetcher._get_deno_executable()
+        self.assertIsNotNone(deno_bin, "Should resolve deno executable from installed deno package")
+        self.assertTrue(Path(deno_bin).is_file(), f"Resolved deno path must exist: {deno_bin}")
+
+        captured_opts = []
+
+        class FakeDenoCheckYDL:
+            def __init__(self, opts):
+                captured_opts.append(opts)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                return False
+
+            def extract_info(self, url, download=True):
+                outtmpl = captured_opts[-1]["outtmpl"]
+                target_dir = Path(outtmpl).parent
+                (target_dir / "online_source_yt1.m4a").write_bytes(b"audio_bytes")
+                return {"id": "yt1", "title": "YouTube JS Challenge Clip", "duration": 6.0}
+
+        with tempfile.TemporaryDirectory() as td:
+            temp_dir = Path(td)
+            cancel_event = threading.Event()
+            with patch.object(yt_dlp, "YoutubeDL", FakeDenoCheckYDL):
+                OnlineMediaFetcher.download_audio_to_temp(
+                    url="https://www.youtube.com/watch?v=yt1",
+                    temp_dir=temp_dir,
+                    cancel_event=cancel_event,
+                )
+                self.assertEqual(len(captured_opts), 1)
+                self.assertIn("js_runtimes", captured_opts[0])
+                self.assertIn("deno", captured_opts[0]["js_runtimes"])
+                self.assertEqual(captured_opts[0]["js_runtimes"]["deno"]["path"], deno_bin)
+
+    def test_updater_upgrade_runtime_dependencies(self):
+        from faery_app.lifecycle.updater import AutoUpdater
+
+        # 1. When frozen (standalone bundle), returns False without calling subprocess.run
+        with patch.object(AutoUpdater, "is_standalone_bundle", return_value=True), \
+             patch("subprocess.run") as mock_run:
+            self.assertFalse(AutoUpdater.upgrade_runtime_dependencies())
+            mock_run.assert_not_called()
+
+        # 2. When not frozen, invokes pip install --upgrade yt-dlp[default] yt-dlp-ejs deno
+        mock_proc = MagicMock(returncode=0)
+        with patch.object(AutoUpdater, "is_standalone_bundle", return_value=False), \
+             patch("subprocess.run", return_value=mock_proc) as mock_run:
+            self.assertTrue(AutoUpdater.upgrade_runtime_dependencies())
+            mock_run.assert_called_once()
+            cmd = mock_run.call_args[0][0]
+            self.assertEqual(cmd[:5], [sys.executable, "-m", "pip", "install", "--upgrade"])
+            self.assertIn("yt-dlp[default]", cmd)
+            self.assertIn("yt-dlp-ejs", cmd)
+            self.assertIn("deno", cmd)
+
+    def test_timestamped_framing_and_macos_mic_plist(self):
+        from faery_app.transcription.engine import TranscriptionEngine
+        from faery_app.ui.views.transcribe_view import TranscribeStudioView
+        import inspect
+
+        meta = MediaMetadata(
+            path=Path("clip.mp4"),
+            file_size_bytes=1024,
+            duration_seconds=15.0,
+            has_audio=True,
+            format_name="mp4",
+        )
+        segs = [TranscriptSegment(start=0.0, end=3.0, text="Hello apothecary world.")]
+        md = TranscriptionEngine._build_markdown(meta, "small.en", "Hello apothecary world.", segs)
+        self.assertIn("## Timestamped Transcript", md)
+        self.assertNotIn("YouTube Chapters", md)
+
+        view_src = inspect.getsource(TranscribeStudioView.build)
+        self.assertIn("record_mic_btn", view_src)
+        self.assertIn("⏱️ Timestamped", view_src)
+        self.assertNotIn("YouTube Chapters", view_src)
+
+        with tempfile.TemporaryDirectory() as td:
+            bundle_dir = Path(td) / "Faery Good Transcriber.app"
+            _create_macos_app_bundle(bundle_dir, repo_dir=Path(__file__).resolve().parent)
+            plist_file = bundle_dir / "Contents" / "Info.plist"
+            self.assertTrue(plist_file.is_file())
+            with open(plist_file, "rb") as fp:
+                plist_data = plistlib.load(fp)
+            self.assertIn("NSMicrophoneUsageDescription", plist_data)
+            self.assertIn("microphone", plist_data["NSMicrophoneUsageDescription"].lower())
+
+
+class TestPerformanceOptimizations(unittest.TestCase):
+    """Verifies Phases 1–4 runtime, I/O, SQLite, and UI performance optimizations."""
+
+    def test_wav_fast_path_probe_and_16k_extract_bypass(self):
+        import wave
+
+        with tempfile.TemporaryDirectory() as td:
+            temp_dir = Path(td)
+            wav_path = temp_dir / "fast_16k_mono.wav"
+            out_wav = temp_dir / "extracted_out.wav"
+
+            with wave.open(str(wav_path), "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(16000)
+                wf.writeframes(b"\x08\x00" * 16000)
+
+            self.assertTrue(MediaProcessor.is_16k_mono_pcm_wav(wav_path))
+
+            with patch("subprocess.run") as mock_run:
+                meta = MediaProcessor.probe_file(wav_path)
+                mock_run.assert_not_called()
+                self.assertTrue(meta.has_audio)
+                self.assertEqual(meta.format_name, "wav")
+                self.assertAlmostEqual(meta.duration_seconds, 1.0, places=2)
+
+            with patch("subprocess.Popen") as mock_popen:
+                MediaProcessor.extract_16k_mono_wav(wav_path, out_wav, threading.Event())
+                mock_popen.assert_not_called()
+                self.assertTrue(out_wav.exists())
+                self.assertTrue(MediaProcessor.is_16k_mono_pcm_wav(out_wav))
+
+    def test_cached_ffmpeg_and_deno_lookup(self):
+        from faery_app.media.online_fetcher import OnlineMediaFetcher
+
+        exe1 = get_verified_ffmpeg_exe()
+        self.assertTrue(Path(exe1).is_file())
+        with patch("imageio_ffmpeg.get_ffmpeg_exe") as mock_get_ffmpeg:
+            exe2 = get_verified_ffmpeg_exe()
+            mock_get_ffmpeg.assert_not_called()
+            self.assertEqual(exe1, exe2)
+
+        deno1 = OnlineMediaFetcher._get_deno_executable()
+        self.assertIsNotNone(deno1)
+        self.assertTrue(Path(deno1).is_file())
+        self.assertEqual(OnlineMediaFetcher._cached_deno_exe, deno1)
+        with patch("shutil.which") as mock_which:
+            deno2 = OnlineMediaFetcher._get_deno_executable()
+            mock_which.assert_not_called()
+            self.assertEqual(deno1, deno2)
+
+    def test_adaptive_cpu_threads(self):
+        # 1. Fallback heuristic based on logical core count:
+        # 2 logical -> 2 physical -> 2 threads
+        # 4 logical -> 4 physical -> 4 threads
+        # 8 logical -> 4 physical (capped to physical cores) -> 4 threads
+        # 16 logical -> 8 physical -> 8 threads
+        with patch("sys.platform", "win32"), patch.dict("sys.modules", {"psutil": None}):
+            for cores, expected in [(2, 2), (4, 4), (8, 4), (16, 8)]:
+                with patch("os.cpu_count", return_value=cores):
+                    self.assertEqual(TranscriptionEngine.get_optimal_cpu_threads(), expected)
+
+        # 2. macOS physical core detection via sysctl (Ericka's MacBook Pro 1068NG7)
+        with patch("sys.platform", "darwin"), patch("subprocess.check_output", return_value="4"):
+            self.assertEqual(TranscriptionEngine.get_optimal_cpu_threads(), 4)
+
+        # 3. macOS physical core detection with 2 cores
+        with patch("sys.platform", "darwin"), patch("subprocess.check_output", return_value="2"):
+            self.assertEqual(TranscriptionEngine.get_optimal_cpu_threads(), 2)
+
+        # 4. macOS sysctl failure fallbacks gracefully
+        with patch("sys.platform", "darwin"), patch("subprocess.check_output", side_effect=Exception("error")), patch.dict("sys.modules", {"psutil": None}):
+            with patch("os.cpu_count", return_value=8):
+                self.assertEqual(TranscriptionEngine.get_optimal_cpu_threads(), 4)
+
+    def test_prevent_app_nap_lifecycle(self):
+        from faery_app.utils.macos import prevent_app_nap
+        from unittest.mock import MagicMock
+
+        # On non-darwin: does nothing
+        with patch("sys.platform", "win32"):
+            with patch("subprocess.Popen") as mock_popen:
+                with prevent_app_nap():
+                    pass
+                mock_popen.assert_not_called()
+
+        # On darwin: launches caffeinate and terminates it
+        with patch("sys.platform", "darwin"):
+            mock_proc = MagicMock()
+            with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+                with prevent_app_nap():
+                    mock_popen.assert_called_once()
+                mock_proc.terminate.assert_called_once()
+                mock_proc.wait.assert_called_once()
+
+    def test_intel_openmp_env_vars(self):
+        self.assertEqual(os.environ.get("KMP_BLOCKTIME"), "0")
+        self.assertEqual(os.environ.get("OMP_WAIT_POLICY"), "PASSIVE")
+
+    def test_history_single_record_content_update_and_in_place_selection(self):
+        from app import HistoryManager, HistoryRecord
+
+        with tempfile.TemporaryDirectory() as td:
+            temp_path = Path(td)
+            db_file = temp_path / "perf_hist.db"
+            hm = HistoryManager(history_path=db_file)
+
+            p1 = temp_path / "clip1_paragraphs.txt"
+            p2 = temp_path / "clip2_paragraphs.txt"
+            p1.write_text("initial short text", encoding="utf-8")
+            p2.write_text("second clip text", encoding="utf-8")
+
+            r1 = HistoryRecord(
+                id="rec_perf_1",
+                title="First Clip",
+                source_filename="clip1.mp4",
+                duration_str="00:10",
+                created_at="2026-11-05 10:00",
+                model="small.en",
+                paragraphs_file=str(p1),
+                timecoded_file="",
+                markdown_file="",
+                word_count=3,
+            )
+            r2 = HistoryRecord(
+                id="rec_perf_2",
+                title="Second Clip",
+                source_filename="clip2.mp4",
+                duration_str="00:20",
+                created_at="2026-11-05 10:05",
+                model="small.en",
+                paragraphs_file=str(p2),
+                timecoded_file="",
+                markdown_file="",
+                word_count=3,
+            )
+            hm.add_or_update(r1)
+            hm.add_or_update(r2)
+
+            updated = hm.update_record_content("rec_perf_1", "new edited text with seven spoken words")
+            self.assertIsNotNone(updated)
+            self.assertEqual(updated.word_count, 7)
+            self.assertEqual(hm.get_by_id("rec_perf_1").word_count, 7)
+
+            hits = hm.search_with_snippets("seven")
+            self.assertEqual(len(hits), 1)
+            self.assertEqual(hits[0].id, "rec_perf_1")
+
+            app = FaeryTranscriberApp()
+            app.withdraw()
+            try:
+                app.history = hm
+                app._refresh_history_list(filter_text="", resync=False)
+                self.assertIn("rec_perf_1", app._history_card_widgets)
+                self.assertIn("rec_perf_2", app._history_card_widgets)
+
+                card_ref_1 = app._history_card_widgets["rec_perf_1"][0]
+                card_ref_2 = app._history_card_widgets["rec_perf_2"][0]
+
+                app._select_history_item("rec_perf_1")
+                self.assertIs(app._history_card_widgets["rec_perf_1"][0], card_ref_1)
+                self.assertIn("🦋", app._history_card_widgets["rec_perf_1"][1].cget("text"))
+
+                app._select_history_item("rec_perf_2")
+                self.assertIs(app._history_card_widgets["rec_perf_1"][0], card_ref_1)
+                self.assertIs(app._history_card_widgets["rec_perf_2"][0], card_ref_2)
+                self.assertNotIn("🦋", app._history_card_widgets["rec_perf_1"][1].cget("text"))
+                self.assertIn("🦋", app._history_card_widgets["rec_perf_2"][1].cget("text"))
+            finally:
+                app.radio_controller.stop()
+                app.destroy()
+
+    def test_radio_tick_idle_when_off(self):
+        app = FaeryTranscriberApp()
+        app.withdraw()
+        try:
+            self.assertFalse(app.config.radio_enabled)
+            self.assertIsNone(app._radio_after_id)
+
+            app.radio_toggle.select()
+            app._on_radio_toggle_changed()
+            self.assertTrue(app.config.radio_enabled)
+            self.assertIsNotNone(app._radio_after_id)
+
+            app._close_radio_player()
+            self.assertFalse(app.config.radio_enabled)
+            self.assertIsNone(app._radio_after_id)
+        finally:
+            app.radio_controller.stop()
+            app.destroy()
 
 
 if __name__ == "__main__":

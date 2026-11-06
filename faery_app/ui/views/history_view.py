@@ -177,7 +177,7 @@ class HistoryLibraryView:
 
         app.history_view_selector = FaerySegmentedButton(
             left_crud,
-            values=["📄 Clean Paragraphs", "⏱️ Timecoded", "📝 Markdown"],
+            values=["📄 Clean Paragraphs", "⏱️ Timestamped", "📝 Markdown"],
             command=app._on_history_view_mode_changed,
             height=30,
             corner_radius=15,

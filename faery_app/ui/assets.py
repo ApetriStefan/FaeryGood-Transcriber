@@ -49,27 +49,33 @@ class BrandAssets:
             bf_l = self.assets_dir / "faery_butterfly_light.png"
             bf_d = self.assets_dir / "faery_butterfly_dark.png"
             if bf_l.exists():
+                bf_img_l = Image.open(bf_l).convert("RGBA")
+                bf_img_d = Image.open(bf_d).convert("RGBA") if bf_d.exists() else bf_img_l
                 self.icon_butterfly = ctk.CTkImage(
-                    light_image=Image.open(bf_l),
-                    dark_image=Image.open(bf_d) if bf_d.exists() else Image.open(bf_l),
+                    light_image=bf_img_l,
+                    dark_image=bf_img_d,
                     size=(20, 20),
                 )
 
             mt_l = self.assets_dir / "faery_mortar_light.png"
             mt_d = self.assets_dir / "faery_mortar_dark.png"
             if mt_l.exists():
+                mt_img_l = Image.open(mt_l).convert("RGBA")
+                mt_img_d = Image.open(mt_d).convert("RGBA") if mt_d.exists() else mt_img_l
                 self.icon_mortar = ctk.CTkImage(
-                    light_image=Image.open(mt_l),
-                    dark_image=Image.open(mt_d) if mt_d.exists() else Image.open(mt_l),
+                    light_image=mt_img_l,
+                    dark_image=mt_img_d,
                     size=(18, 18),
                 )
 
             sp_l = self.assets_dir / "faery_sprig_light.png"
             sp_d = self.assets_dir / "faery_sprig_dark.png"
             if sp_l.exists():
+                sp_img_l = Image.open(sp_l).convert("RGBA")
+                sp_img_d = Image.open(sp_d).convert("RGBA") if sp_d.exists() else sp_img_l
                 self.icon_sprig = ctk.CTkImage(
-                    light_image=Image.open(sp_l),
-                    dark_image=Image.open(sp_d) if sp_d.exists() else Image.open(sp_l),
+                    light_image=sp_img_l,
+                    dark_image=sp_img_d,
                     size=(18, 18),
                 )
         except Exception:

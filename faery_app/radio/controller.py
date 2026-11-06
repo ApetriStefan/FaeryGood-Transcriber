@@ -346,11 +346,14 @@ class RadioStationController:
             self._pending_song = None
             self._prepare_and_play_song(prev_song)
 
-    def set_volume(self, vol: float) -> None:
-        """Updates playback volume (0.0 to 1.0) and persists in user config."""
+    def set_volume(self, vol: float, persist: bool = True) -> None:
+        """Updates playback volume (0.0 to 1.0) and optionally persists in user config."""
         clamped = max(0.0, min(1.0, float(vol)))
         self.volume = clamped
-        self.config.radio_volume = clamped
+        if persist:
+            self.config.radio_volume = clamped
+        else:
+            self.config.data["radio_volume"] = clamped
         if clamped > 0.0:
             self.is_muted = False
             self._prev_unmuted_volume = clamped

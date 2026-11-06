@@ -40,6 +40,9 @@ critical_pkgs = [
     "certifi",
     "PIL",
     "yt_dlp",
+    "yt_dlp_ejs",
+    "deno",
+    "sounddevice",
     "pygame",
 ]
 
@@ -67,6 +70,7 @@ hiddenimports += [
     "faery_app.media",
     "faery_app.media.processor",
     "faery_app.media.online_fetcher",
+    "faery_app.media.recorder",
     "faery_app.transcription",
     "faery_app.transcription.engine",
     "faery_app.radio",
@@ -86,6 +90,7 @@ hiddenimports += [
     "faery_app.ui.dialogs.quick_guide",
     "faery_app.ui.dialogs.about",
     "faery_app.ui.dialogs.overwrite_prompt",
+    "faery_app.ui.dialogs.cookie_permission",
     "faery_app.ui.views",
     "faery_app.ui.views.transcribe_view",
     "faery_app.ui.views.history_view",
@@ -166,6 +171,7 @@ if sys.platform == 'darwin':
             'LSMinimumSystemVersion': '11.0',
             'LSApplicationCategoryType': 'public.app-category.video',
             'NSDocumentsFolderUsageDescription': 'Faery Good Transcriber stores generated transcripts in your Documents folder.',
+            'NSMicrophoneUsageDescription': 'Faery Good Transcriber uses your microphone when you record voice notes for local on-device transcription.',
             'NSHumanReadableCopyright': 'Crafted for Faery Good (https://faerygood.com/) • Whimsy is Power',
         },
     )

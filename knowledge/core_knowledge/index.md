@@ -10,7 +10,7 @@
 
 ## Mission
 
-Faery Good Transcriber is a standalone, privacy-first desktop application designed for creators and storytellers. It transcribes audio/video files and social media clips (Instagram Reels, YouTube, TikTok, Facebook) completely offline on the user's local CPU using `faster-whisper`, formats speech into clean paragraphs and timecoded chapters, saves outputs to `Documents/Transcriptions`, guarantees zero-residue temporary audio cleanup via `ScratchLifecycleManager`, and provides an ambient background radio player.
+Faery Good Transcriber is a standalone, privacy-first desktop application designed for creators and storytellers. It transcribes English audio/video files, built-in microphone voice recordings (`MicrophoneRecorder`), and social media clips (Instagram Reels, YouTube, TikTok, Facebook) completely offline on the user's local CPU using `faster-whisper` (`small.en` and `base.en`), formats speech into clean paragraphs and timestamped transcripts (`[MM:SS]`), saves outputs to `Documents/Transcriptions`, guarantees zero-residue temporary audio cleanup via `ScratchLifecycleManager`, and provides an ambient background radio player.
 
 ---
 
@@ -18,9 +18,9 @@ Faery Good Transcriber is a standalone, privacy-first desktop application design
 
 | Location | Has answers about | Does NOT have | Read code instead for |
 |---|---|---|---|
-| [`architecture.md`](architecture.md) | System overview, modular `faery_app` architecture, threading model, audio pipeline, UI layout, `ScratchLifecycleManager`, `AutoUpdater`, self-healing launchers | Line-level event bindings | Function bodies in `faery_app/` and `app.py` |
-| [`components/_about.md`](components/_about.md) | Architectural modules: GUI views, inference engine, media extractor, scratch manager, auto-updater, radio, formatting, contracts | Full source implementations | Specific widget callbacks |
-| [`infrastructure/_about.md`](infrastructure/_about.md) | Virtualenv provisioning, PyInstaller bundling specs (`FaeryTranscriber.spec`), platform-specific launchers (`Run_Windows.bat`, `Run_Mac.command`), test coverage (37 tests) | Core UI logic | Build script internals |
+| [`architecture.md`](architecture.md) | System overview, modular `faery_app` architecture, threading model, audio pipeline, microphone recording, UI layout, `ScratchLifecycleManager`, `AutoUpdater`, self-healing launchers | Line-level event bindings | Function bodies in `faery_app/` and `app.py` |
+| [`components/_about.md`](components/_about.md) | Architectural modules: GUI views, inference engine, media extractor, microphone recorder, cookie permission dialog, scratch manager, auto-updater, radio, formatting, contracts | Full source implementations | Specific widget callbacks |
+| [`infrastructure/_about.md`](infrastructure/_about.md) | Virtualenv provisioning, PyInstaller bundling specs (`FaeryTranscriber.spec`), platform-specific launchers (`Run_Windows.bat`, `Run_Mac.command`), test coverage | Core UI logic | Build script internals |
 | [`processes/_about.md`](processes/_about.md) | Quality verification, scratch hygiene assurance, friend delivery steps, release workflows | Personal notes | Git commit logs |
 | [`team_and_stakeholders/`](team_and_stakeholders/_about.md) | Contact registry, team structure, ownership map, stakeholder roles | Code implementation | Repository issues |
 
@@ -44,10 +44,12 @@ The single source of truth for repository documentation structure:
 | **Faery Good Transcriber** | The official desktop transcription application. |
 | **faery_app** | The modular Python package containing decoupled subsystems (`config`, `lifecycle`, `models`, `media`, `transcription`, `radio`, `history`, `utils`, `ui`). |
 | **app.py** | Backwards-compatible public facade re-exporting all symbols and bootstrapping application startup. |
-| **faster-whisper** | CTranslate2-accelerated implementation of OpenAI Whisper running 100% locally on CPU (`int8` quantization). |
-| **yt-dlp** | Standalone online media extraction tool used to fetch temporary audio streams from social URLs. |
-| **ScratchLifecycleManager** | Subsystem providing guaranteed failsafe cleanup of temporary audio files across normal exits, cancellations, system signals, and crashes. |
-| **AutoUpdater** | Background component checking for updates every 7 days when running in a git clone, safely bypassed in standalone frozen bundles. |
+| **faster-whisper** | CTranslate2-accelerated implementation of OpenAI Whisper running 100% locally on CPU (`int8` quantization) with English-optimized models (`small.en`, `base.en`). |
+| **yt-dlp / deno** | Online media extraction stack (`yt-dlp[default]`, `yt-dlp-ejs`, and bundled `deno` runtime) used to fetch temporary audio streams from social URLs and solve YouTube JS challenges. |
+| **MicrophoneRecorder** | Built-in microphone voice recording subsystem (`faery_app/media/recorder.py`) capturing 16kHz mono PCM WAV via `sounddevice` into `faery_mic_*` scratch directories. |
+| **CookiePermissionDialog** | Modal dialog (`faery_app/ui/dialogs/cookie_permission.py`) gating browser cookie extraction in `Auto / Public` mode when a social clip is behind a login wall. |
+| **ScratchLifecycleManager** | Subsystem providing guaranteed failsafe cleanup of temporary audio files (`faery_transcribe_*`, `faery_mic_*`) across normal exits, cancellations, system signals, and crashes. |
+| **AutoUpdater** | Background component checking for git and extractor (`yt-dlp[default]`, `yt-dlp-ejs`, `deno`) updates every 7 days when running in a git clone, safely bypassed in standalone frozen bundles. |
 | **Self-Healing Launcher** | Platform batch/shell scripts (`Run_Windows.bat`, `Run_Mac.command`) that detect Python, self-provision virtual environments, and alert users via native GUI dialogs. |
 | **macOS App Registration** | Automated subsystem (`ensure_macos_app_installed`, `install_app_bundle`) installing `.app` bundles into `/Applications` (or `~/Applications`), clearing quarantine flags, and registering with LaunchServices for Spotlight indexing. |
 | **Faery Radio** | Embedded ambient music player (104.9 The Grift FM) with GTA-style station bumpers. |

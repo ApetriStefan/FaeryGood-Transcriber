@@ -30,6 +30,7 @@ Everything runs **100% privately on your own computer**—no cloud uploads, no m
 Choose whichever is easiest for you:
 
 * **📁 From Your Computer:** Click **`📁 Choose Audio or Video…`** (or press `Ctrl+O` on Windows / `⌘O` on Mac). You can drop in voice memos, podcast tracks, phone videos, or Zoom recordings (`.mp4`, `.mov`, `.m4a`, `.mp3`, `.wav`).
+* **🎙️ Record Your Microphone:** Click **`🎙️ Record Mic`** (or press `Ctrl+D` / `⌘D`) to record voice notes directly in the app.
 * **🌐 From Social Media:** Copy any public link from **Instagram Reels, YouTube, TikTok, or Facebook**, then click **`📋 Paste Link`** (or press `Ctrl+L` / `⌘L`).
 
 > 🔒 **Privacy Guarantee on Links:** When transcribing from a web link, the app extracts the audio into a temporary private scratch area, transcribes it, and then **immediately deletes** the audio file the moment it finishes. Zero clutter is left behind on your disk!
@@ -50,7 +51,7 @@ At the top of the transcript studio, you can switch between three views with a s
 | Format | Best For | What It Looks Like |
 |---|---|---|
 | **📄 Clean Paragraphs** | Newsletters, blog posts, Instagram captions, & articles | Natural sentences automatically grouped by where you naturally paused when speaking. |
-| **⏱️ Timecoded (YouTube)** | YouTube video descriptions & podcast show notes | Includes timestamps like `[01:14] Introduction` that turn into instant clickable video chapters when pasted into YouTube descriptions. |
+| **⏱️ Timestamped** | Show notes, video editing & reference logs | Includes `[MM:SS]` timestamps on every spoken segment so you can easily find any moment in your recording. |
 | **📝 Raw Text** | Note-taking apps, AI prompts, or custom editing | Clean, continuous text without any extra markup. |
 
 ---
@@ -95,8 +96,8 @@ Click the **`📻 Radio`** button in the top bar (or press `Ctrl+R` / `⌘R`) to
 Occasionally, Instagram or Facebook will ask visitors to sign in before playing certain Reels or private clips.
 
 We made this super easy:
-1. In the app's preferences bar, find the **`🔐 Social Login`** dropdown.
-2. Select the web browser where you are already logged into Instagram or Facebook (e.g., **Chrome**, **Safari**, **Edge**, **Brave**, or **Firefox**).
+1. In **`Auto / Public (Recommended)`** mode, the app always tries to download clips publicly first. If a clip is behind a login wall, the app will ask your permission before reading browser cookies (supporting **Safari**, **Chrome**, **Firefox**, **Edge**, and **Brave**).
+2. Or, in the app's preferences bar, find the **`🔐 Social Login`** dropdown and directly select the web browser where you are already logged into Instagram or Facebook (e.g., **Chrome**, **Safari**, **Edge**, **Brave**, or **Firefox**).
 3. Click **`✨ Generate Transcript`** again!
 
 The app will securely reuse your existing browser cookie to access the audio. It **never** asks for, touches, or stores your passwords.
@@ -116,7 +117,7 @@ Your voice and words belong entirely to you:
 
 * **"Can I change the appearance?"** Yes! Click the theme dropdown in the top-right corner to switch between **Light**, **Dark**, or **System** mode whenever you like.
 * **"How do I clear the text and start a new clip?"** Press `Ctrl+N` / `⌘N` (or click **`New`** in the menu).
-* **"What languages are supported?"** Over 99 languages! The engine detects the spoken language automatically.
+* **"What languages are supported?"** Faery Good Transcriber is specifically tuned and optimized for **English** speech (`small.en` and `base.en` models) to deliver the highest accuracy and fastest local performance on your computer.
 
 ---
 

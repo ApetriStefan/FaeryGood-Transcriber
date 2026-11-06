@@ -13,6 +13,9 @@ import sys
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 # Suppress pygame community banner
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
+# Prevent Intel OpenMP threads (ctranslate2) from busy-waiting and burning CPU / heat between chunks
+os.environ["KMP_BLOCKTIME"] = "0"
+os.environ["OMP_WAIT_POLICY"] = "PASSIVE"
 
 # Windows High-DPI awareness initialization
 if sys.platform == "win32":
@@ -42,6 +45,7 @@ from faery_app.models.formatter import TranscriptFormatter
 # Re-export Media & Extraction
 from faery_app.media.processor import MediaProcessor
 from faery_app.media.online_fetcher import OnlineMediaFetcher
+from faery_app.media.recorder import MicrophoneRecorder
 
 # Re-export Speech Recognition Engine
 from faery_app.transcription.engine import TranscriptionEngine
@@ -65,6 +69,7 @@ from faery_app.utils.system import (
 )
 from faery_app.utils.macos import (
     ensure_macos_app_installed,
+    prevent_app_nap,
     _create_macos_app_bundle,
     _register_macos_app_bundle,
 )
@@ -75,6 +80,7 @@ from faery_app.ui.components.segmented_button import FaerySegmentedButton
 from faery_app.ui.dialogs.quick_guide import QuickGuideDialog
 from faery_app.ui.dialogs.about import AboutDialog
 from faery_app.ui.dialogs.overwrite_prompt import OverwritePromptDialog
+from faery_app.ui.dialogs.cookie_permission import CookiePermissionDialog
 from faery_app.ui.views.transcribe_view import TranscribeStudioView
 from faery_app.ui.views.history_view import HistoryLibraryView
 from faery_app.ui.views.radio_dock import RadioPlayerDock

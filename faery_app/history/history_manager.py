@@ -5,6 +5,7 @@ Powered by embedded SQLite and SQLite FTS5.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 import json
@@ -14,7 +15,7 @@ import re
 import sqlite3
 import sys
 import time
-from typing import List, Optional, Tuple, Union
+from typing import Iterator, List, Optional, Tuple, Union
 
 from faery_app.constants import DB_FILE_NAME, DB_PATH, HISTORY_FILE_NAME, HISTORY_PATH
 
@@ -224,9 +225,28 @@ class HistoryManager:
         conn.execute("PRAGMA foreign_keys=ON;")
         return conn
 
+    @contextmanager
+    def _connection(self, write_wal: bool = False) -> Iterator[sqlite3.Connection]:
+        """Context manager that commits/rolls back and guarantees closing the SQLite file handle."""
+        conn = sqlite3.connect(str(self.db_path), timeout=10.0)
+        conn.row_factory = sqlite3.Row
+        try:
+            if write_wal:
+                conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA synchronous=NORMAL;")
+            conn.execute("PRAGMA busy_timeout=10000;")
+            conn.execute("PRAGMA foreign_keys=ON;")
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
     def _init_db(self) -> None:
         """Initializes tables, FTS5 virtual table, and triggers in SQLite."""
-        with self._get_connection() as conn:
+        with self._connection(write_wal=True) as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS transcriptions (
@@ -274,7 +294,6 @@ class HistoryManager:
                 END;
                 """
             )
-            conn.commit()
 
     def _migrate_legacy_json(self) -> None:
         """Seamlessly migrates legacy JSON history into SQLite and renames file to .bak."""
@@ -292,10 +311,11 @@ class HistoryManager:
             with open(target_json, "r", encoding="utf-8") as f:
                 raw_list = json.load(f)
                 if isinstance(raw_list, list):
-                    for item in raw_list:
-                        if isinstance(item, dict):
-                            rec = HistoryRecord.from_dict(item)
-                            self._insert_record(rec)
+                    with self._connection() as conn:
+                        for item in raw_list:
+                            if isinstance(item, dict):
+                                rec = HistoryRecord.from_dict(item)
+                                self._upsert_record_in_conn(conn, rec)
             bak_path = target_json.with_name(target_json.name + ".bak")
             if bak_path.exists():
                 bak_path.unlink()
@@ -334,46 +354,54 @@ class HistoryManager:
                     pass
         return content
 
-    def _insert_record(self, record: HistoryRecord) -> None:
+    def _upsert_record_in_conn(
+        self,
+        conn: sqlite3.Connection,
+        record: HistoryRecord,
+        content: Optional[str] = None,
+    ) -> None:
+        """Upserts a record and its FTS5 entry inside an existing SQLite connection/transaction."""
         now_str = record.updated_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with self._get_connection() as conn:
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO transcriptions (
-                    id, title, source_filename, duration_str, created_at, model,
-                    paragraphs_file, timecoded_file, markdown_file, word_count,
-                    is_favorite, tags, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                """,
-                (
-                    record.id,
-                    record.title,
-                    record.source_filename,
-                    record.duration_str,
-                    record.created_at,
-                    record.model,
-                    record.paragraphs_file,
-                    record.timecoded_file,
-                    record.markdown_file,
-                    record.word_count,
-                    1 if record.is_favorite else 0,
-                    record.tags or "",
-                    now_str,
-                ),
-            )
-            content = self._read_content_for_record(record)
-            conn.execute("DELETE FROM transcriptions_fts WHERE id = ?;", (record.id,))
-            conn.execute(
-                "INSERT INTO transcriptions_fts (id, title, content) VALUES (?, ?, ?);",
-                (record.id, record.title, content),
-            )
-            conn.commit()
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO transcriptions (
+                id, title, source_filename, duration_str, created_at, model,
+                paragraphs_file, timecoded_file, markdown_file, word_count,
+                is_favorite, tags, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                record.id,
+                record.title,
+                record.source_filename,
+                record.duration_str,
+                record.created_at,
+                record.model,
+                record.paragraphs_file,
+                record.timecoded_file,
+                record.markdown_file,
+                record.word_count,
+                1 if record.is_favorite else 0,
+                record.tags or "",
+                now_str,
+            ),
+        )
+        body_text = content if content is not None else self._read_content_for_record(record)
+        conn.execute("DELETE FROM transcriptions_fts WHERE id = ?;", (record.id,))
+        conn.execute(
+            "INSERT INTO transcriptions_fts (id, title, content) VALUES (?, ?, ?);",
+            (record.id, record.title, body_text),
+        )
+
+    def _insert_record(self, record: HistoryRecord) -> None:
+        with self._connection() as conn:
+            self._upsert_record_in_conn(conn, record)
 
     def load(self) -> None:
         """Loads all records from SQLite into memory ordered by favorite and date."""
         self.records.clear()
         try:
-            with self._get_connection() as conn:
+            with self._connection() as conn:
                 rows = conn.execute(
                     """
                     SELECT * FROM transcriptions 
@@ -385,12 +413,39 @@ class HistoryManager:
             print(f"[Warning] Failed to load history from SQLite: {err}", file=sys.stderr)
 
     def save(self) -> None:
-        """Synchronizes all in-memory records into SQLite."""
+        """Synchronizes all in-memory records into SQLite in a single transaction."""
         try:
-            for r in self.records:
-                self._insert_record(r)
+            with self._connection() as conn:
+                for r in self.records:
+                    self._upsert_record_in_conn(conn, r)
         except Exception as err:
             print(f"[Warning] Failed to save history to SQLite: {err}", file=sys.stderr)
+
+    def update_record_content(
+        self,
+        record_id: str,
+        new_content: str,
+        update_fts: bool = True,
+    ) -> Optional[HistoryRecord]:
+        """Updates word_count and FTS5 content for a single edited record in O(1) time."""
+        wcount = len(new_content.split())
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self._connection() as conn:
+            conn.execute(
+                "UPDATE transcriptions SET word_count = ?, updated_at = ? WHERE id = ?;",
+                (wcount, now_str, record_id),
+            )
+            if update_fts:
+                conn.execute(
+                    "UPDATE transcriptions_fts SET content = ? WHERE id = ?;",
+                    (new_content, record_id),
+                )
+        for r in self.records:
+            if r.id == record_id:
+                r.word_count = wcount
+                r.updated_at = now_str
+                return r
+        return None
 
     def add_or_update(self, record: HistoryRecord) -> None:
         """Inserts a new record or updates an existing record with matching ID, title, or paths."""
@@ -404,13 +459,12 @@ class HistoryManager:
                 existing_id = r.id
                 break
 
-        if existing_id and existing_id != record.id:
-            with self._get_connection() as conn:
+        with self._connection() as conn:
+            if existing_id and existing_id != record.id:
                 conn.execute("DELETE FROM transcriptions WHERE id = ?;", (existing_id,))
                 conn.execute("DELETE FROM transcriptions_fts WHERE id = ?;", (existing_id,))
-                conn.commit()
+            self._upsert_record_in_conn(conn, record)
 
-        self._insert_record(record)
         self.load()
 
     def get_all(self) -> List[HistoryRecord]:
@@ -420,7 +474,7 @@ class HistoryManager:
 
     def get_by_id(self, record_id: str) -> Optional[HistoryRecord]:
         """Finds a single history record by ID."""
-        with self._get_connection() as conn:
+        with self._connection() as conn:
             row = conn.execute("SELECT * FROM transcriptions WHERE id = ?;", (record_id,)).fetchone()
             if row:
                 return self._row_to_record(row)
@@ -428,7 +482,7 @@ class HistoryManager:
 
     def toggle_favorite(self, record_id: str) -> bool:
         """Toggles the favorite flag for a record and returns the new state."""
-        with self._get_connection() as conn:
+        with self._connection() as conn:
             row = conn.execute("SELECT is_favorite FROM transcriptions WHERE id = ?;", (record_id,)).fetchone()
             if not row:
                 return False
@@ -439,7 +493,6 @@ class HistoryManager:
                 "UPDATE transcriptions SET is_favorite = ?, updated_at = ? WHERE id = ?;",
                 (1 if new_fav else 0, now_str, record_id),
             )
-            conn.commit()
 
         for r in self.records:
             if r.id == record_id:
@@ -465,10 +518,9 @@ class HistoryManager:
                     except Exception:
                         pass
 
-        with self._get_connection() as conn:
+        with self._connection() as conn:
             conn.execute("DELETE FROM transcriptions WHERE id = ?;", (record_id,))
             conn.execute("DELETE FROM transcriptions_fts WHERE id = ?;", (record_id,))
-            conn.commit()
 
         self.records = [r for r in self.records if r.id != record_id]
         return True
@@ -517,7 +569,7 @@ class HistoryManager:
             rec.title = new_title
             rec.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            with self._get_connection() as conn:
+            with self._connection() as conn:
                 conn.execute(
                     """
                     UPDATE transcriptions
@@ -539,7 +591,6 @@ class HistoryManager:
                     "INSERT INTO transcriptions_fts (id, title, content) VALUES (?, ?, ?);",
                     (rec.id, rec.title, content),
                 )
-                conn.commit()
 
             for idx, r in enumerate(self.records):
                 if r.id == record_id:
@@ -563,6 +614,7 @@ class HistoryManager:
         known_titles = {r.title for r in self.records}
         known_files = {r.markdown_file for r in self.records}
 
+        new_records: List[HistoryRecord] = []
         for stem in discovered_stems:
             para_f = output_dir / f"{stem}_paragraphs.txt"
             time_f = output_dir / f"{stem}_timecoded.txt"
@@ -591,10 +643,10 @@ class HistoryManager:
                     markdown_file=str(md_f) if md_f.exists() else "",
                     word_count=wcount,
                 )
-                self.add_or_update(new_rec)
+                new_records.append(new_rec)
 
         # Remove records where all associated files no longer exist on disk
-        to_delete = []
+        to_delete: List[str] = []
         for r in self.records:
             has_p = bool(r.paragraphs_file and os.path.exists(r.paragraphs_file))
             has_t = bool(r.timecoded_file and os.path.exists(r.timecoded_file))
@@ -602,8 +654,15 @@ class HistoryManager:
             if not (has_p or has_t or has_m):
                 to_delete.append(r.id)
 
-        for r_id in to_delete:
-            self.delete(r_id, delete_files=False)
+        if not new_records and not to_delete:
+            return self.records
+
+        with self._connection() as conn:
+            for rec in new_records:
+                self._upsert_record_in_conn(conn, rec)
+            for r_id in to_delete:
+                conn.execute("DELETE FROM transcriptions WHERE id = ?;", (r_id,))
+                conn.execute("DELETE FROM transcriptions_fts WHERE id = ?;", (r_id,))
 
         self.load()
         return self.records
@@ -628,7 +687,7 @@ class HistoryManager:
         fts_q = " ".join(f'"{t}"*' for t in tokens)
 
         try:
-            with self._get_connection() as conn:
+            with self._connection() as conn:
                 query_sql = """
                     SELECT 
                         t.*, 
@@ -670,12 +729,6 @@ class HistoryManager:
                             if not cleaned.endswith("..."):
                                 cleaned = cleaned + "..."
                             snippet = cleaned
-
-                    # If snippet wasn't produced by FTS5 but content matches, fallback to matches_query snippet
-                    if snippet is None and not any(t.lower() in rec.title.lower() for t in tokens):
-                        _, content_snip = rec.matches_query(clean_q)
-                        if content_snip:
-                            snippet = content_snip
 
                     results.append(SearchResult(record=rec, snippet=snippet))
                 return results

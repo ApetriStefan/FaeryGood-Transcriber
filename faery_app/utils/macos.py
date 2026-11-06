@@ -9,6 +9,7 @@ import plistlib
 import shutil
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -60,6 +61,7 @@ def _create_macos_app_bundle(
         "LSMinimumSystemVersion": "11.0",
         "LSApplicationCategoryType": "public.app-category.video",
         "NSDocumentsFolderUsageDescription": "Faery Good Transcriber stores generated transcripts in your Documents folder.",
+        "NSMicrophoneUsageDescription": "Faery Good Transcriber uses your microphone when you record voice notes for local on-device transcription.",
         "NSHumanReadableCopyright": f"Crafted for Faery Good ({FAERY_GOOD_URL}) • {FAERY_GOOD_TAGLINE}",
     }
     with open(plist_path, "wb") as fp:
@@ -215,3 +217,33 @@ def ensure_macos_app_installed(
     except Exception as exc:
         print(f"[FaeryTranscriber] Note: Applications integration notice: {exc}")
         return None
+
+
+@contextmanager
+def prevent_app_nap():
+    """Context manager to prevent macOS App Nap and system idle sleep during transcription.
+
+    Launches `caffeinate -i -w <pid>` on macOS (Darwin) while the block executes,
+    ensuring macOS Sonoma / Intel hardware does not throttle background worker threads
+    when the app window is hidden, minimized, or occluded by Safari/Finder.
+    """
+    caffeinate_proc = None
+    if sys.platform == "darwin":
+        try:
+            caffeinate_proc = subprocess.Popen(
+                ["caffeinate", "-i", "-w", str(os.getpid())],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            caffeinate_proc = None
+    try:
+        yield
+    finally:
+        if caffeinate_proc:
+            try:
+                caffeinate_proc.terminate()
+                caffeinate_proc.wait(timeout=1.0)
+            except Exception:
+                pass
+

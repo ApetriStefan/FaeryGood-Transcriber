@@ -6,11 +6,14 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
 import time
+import wave
 from pathlib import Path
+from typing import Optional
 
 from faery_app.models.metadata import MediaMetadata
 from faery_app.utils.system import get_verified_ffmpeg_exe
@@ -20,9 +23,49 @@ class MediaProcessor:
     """Handles audio track detection, duration probing, and 16kHz WAV extraction."""
 
     @staticmethod
+    def _probe_wav_fast(file_path: Path, file_size: int) -> Optional[MediaMetadata]:
+        """Fast-path pure-Python RIFF/WAV header inspection without spawning FFmpeg."""
+        if file_path.suffix.lower() != ".wav" or file_size <= 44:
+            return None
+        try:
+            with wave.open(str(file_path), "rb") as wf:
+                channels = wf.getnchannels()
+                framerate = wf.getframerate()
+                nframes = wf.getnframes()
+                sampwidth = wf.getsampwidth()
+                if channels >= 1 and framerate > 0 and nframes > 0 and sampwidth in (1, 2, 3, 4):
+                    return MediaMetadata(
+                        path=file_path,
+                        file_size_bytes=file_size,
+                        duration_seconds=nframes / float(framerate),
+                        has_audio=True,
+                        format_name="wav",
+                    )
+        except Exception:
+            return None
+        return None
+
+    @staticmethod
+    def is_16k_mono_pcm_wav(file_path: Path) -> bool:
+        """Returns True if file_path is already a standard 16kHz mono 16-bit uncompressed PCM WAV."""
+        try:
+            if not file_path.is_file() or file_path.stat().st_size <= 44:
+                return False
+            with wave.open(str(file_path), "rb") as wf:
+                return (
+                    wf.getnchannels() == 1
+                    and wf.getsampwidth() == 2
+                    and wf.getframerate() == 16000
+                    and wf.getcomptype() == "NONE"
+                    and wf.getnframes() > 0
+                )
+        except Exception:
+            return False
+
+    @staticmethod
     def probe_file(file_path: Path) -> MediaMetadata:
         """
-        Inspects the input file using the bundled static FFmpeg binary.
+        Inspects the input file using fast WAV header inspection or the bundled static FFmpeg binary.
         Raises descriptive exceptions if the file is invalid, corrupt, or lacks audio.
         """
         if not file_path.exists() or not file_path.is_file():
@@ -31,6 +74,10 @@ class MediaProcessor:
         file_size = file_path.stat().st_size
         if file_size == 0:
             raise ValueError("The selected file is empty (0 bytes).")
+
+        fast_wav = MediaProcessor._probe_wav_fast(file_path, file_size)
+        if fast_wav is not None:
+            return fast_wav
 
         ffmpeg_exe = get_verified_ffmpeg_exe()
         cmd = [ffmpeg_exe, "-hide_banner", "-i", str(file_path)]
@@ -95,8 +142,17 @@ class MediaProcessor:
     ) -> None:
         """
         Extracts and converts any video or audio stream into a 16kHz mono 16-bit PCM WAV.
+        Bypasses FFmpeg re-encoding when the input is already a 16kHz mono 16-bit PCM WAV.
         Supports instantaneous cancellation by terminating the running FFmpeg process.
         """
+        if cancel_event.is_set():
+            raise InterruptedError("Audio extraction was cancelled by the user.")
+
+        if MediaProcessor.is_16k_mono_pcm_wav(input_path):
+            if input_path.resolve() != output_wav_path.resolve():
+                shutil.copyfile(input_path, output_wav_path)
+            return
+
         ffmpeg_exe = get_verified_ffmpeg_exe()
         cmd = [
             ffmpeg_exe,
@@ -122,7 +178,9 @@ class MediaProcessor:
             creationflags=creation_flags,
         )
 
-        while proc.poll() is None:
+        stdout = ""
+        stderr = ""
+        while True:
             if cancel_event.is_set():
                 proc.kill()
                 proc.wait()
@@ -131,9 +189,12 @@ class MediaProcessor:
                 if proc.stderr:
                     proc.stderr.close()
                 raise InterruptedError("Audio extraction was cancelled by the user.")
-            time.sleep(0.05)
+            try:
+                stdout, stderr = proc.communicate(timeout=0.05)
+                break
+            except subprocess.TimeoutExpired:
+                continue
 
-        stdout, stderr = proc.communicate()
         if proc.stdout:
             proc.stdout.close()
         if proc.stderr:

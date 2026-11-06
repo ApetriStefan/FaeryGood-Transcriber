@@ -10,17 +10,24 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 import imageio_ffmpeg
 
 from faery_app.constants import MIN_DISK_SPACE_MB
 
+_CACHED_FFMPEG_EXE: Optional[str] = None
+
 
 def get_verified_ffmpeg_exe() -> str:
     """
     Retrieves the bundled static FFmpeg binary path from imageio-ffmpeg.
-    Ensures execution permissions are granted on Unix/macOS environments.
+    Ensures execution permissions are granted on Unix/macOS environments and caches the verified path.
     """
+    global _CACHED_FFMPEG_EXE
+    if _CACHED_FFMPEG_EXE and os.path.exists(_CACHED_FFMPEG_EXE):
+        return _CACHED_FFMPEG_EXE
+
     exe = imageio_ffmpeg.get_ffmpeg_exe()
     if not exe or not os.path.exists(exe):
         raise FileNotFoundError(
@@ -31,9 +38,11 @@ def get_verified_ffmpeg_exe() -> str:
     if sys.platform != "win32":
         try:
             current_perms = os.stat(exe).st_mode
-            os.chmod(exe, current_perms | 0o755)
+            if not (current_perms & 0o111):
+                os.chmod(exe, current_perms | 0o755)
         except Exception:
             pass
+    _CACHED_FFMPEG_EXE = exe
     return exe
 
 

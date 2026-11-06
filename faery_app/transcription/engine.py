@@ -7,11 +7,16 @@ from __future__ import annotations
 from datetime import datetime
 import os
 import shutil
+import subprocess
+import sys
 import threading
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, List, Optional, Tuple
 
-from faster_whisper import WhisperModel
+if TYPE_CHECKING:
+    from faster_whisper import WhisperModel
+
+WhisperModel = None
 
 from faery_app.constants import MIN_DISK_SPACE_MB, DEFAULT_COOKIE_BROWSER
 from faery_app.lifecycle.scratch import ScratchLifecycleManager
@@ -20,6 +25,7 @@ from faery_app.media.online_fetcher import OnlineMediaFetcher
 from faery_app.models.formatter import TranscriptFormatter
 from faery_app.models.metadata import MediaMetadata, TranscriptSegment, OnlineClipInfo
 from faery_app.utils.system import check_free_disk_space
+from faery_app.utils.macos import prevent_app_nap
 
 
 class TranscriptionEngine:
@@ -35,6 +41,53 @@ class TranscriptionEngine:
         self._lock = threading.Lock()
 
     @staticmethod
+    def get_optimal_cpu_threads() -> int:
+        """
+        Computes optimal CTranslate2 CPU thread count by targeting physical cores.
+        Prevents hyperthread cache thrashing and excessive thermal throttling on
+        constrained CPUs (e.g., Intel MacBook Pro 10th-gen 28W quad-core).
+        Capped to range [2, 8].
+        """
+        try:
+            physical_cores: Optional[int] = None
+
+            # 1. macOS physical core detection via sysctl
+            if sys.platform == "darwin":
+                try:
+                    output = subprocess.check_output(
+                        ["sysctl", "-n", "hw.physicalcpu"],
+                        text=True,
+                        timeout=2,
+                    ).strip()
+                    if output.isdigit():
+                        physical_cores = int(output)
+                except Exception:
+                    physical_cores = None
+
+            # 2. Windows / Linux physical core detection via psutil (if available)
+            if physical_cores is None:
+                try:
+                    import psutil
+                    count = psutil.cpu_count(logical=False)
+                    if count is not None and count > 0:
+                        physical_cores = count
+                except Exception:
+                    physical_cores = None
+
+            # 3. Fallback heuristic using logical core count
+            if physical_cores is None:
+                logical = os.cpu_count() or 4
+                if logical > 4:
+                    physical_cores = logical // 2
+                else:
+                    physical_cores = logical
+
+            return min(8, max(2, physical_cores))
+        except Exception:
+            logical = os.cpu_count() or 4
+            return min(4, max(2, logical))
+
+    @staticmethod
     def is_model_cached(model_size_or_path: str) -> bool:
         """Checks if the model weights are already downloaded locally."""
         try:
@@ -46,6 +99,7 @@ class TranscriptionEngine:
 
     def get_model(self, model_size_or_path: str, status_cb: Callable[[str], None]) -> WhisperModel:
         """Retrieves or loads the requested faster-whisper model strictly configured for CPU."""
+        global WhisperModel
         with self._lock:
             if self._cached_model is not None and self._cached_model_name == model_size_or_path:
                 return self._cached_model
@@ -58,11 +112,15 @@ class TranscriptionEngine:
                     "(One-time download. Future runs will be 100% offline!)"
                 )
 
+            if WhisperModel is None:
+                from faster_whisper import WhisperModel as _WM
+                WhisperModel = _WM
+
             model = WhisperModel(
                 model_size_or_path,
                 device="cpu",
                 compute_type="int8",
-                cpu_threads=4,
+                cpu_threads=self.get_optimal_cpu_threads(),
             )
             self._cached_model = model
             self._cached_model_name = model_size_or_path
@@ -116,34 +174,35 @@ class TranscriptionEngine:
 
             status_cb("Transcribing audio (this usually takes 1–2 minutes)...")
 
-            segments_gen, info = whisper_model.transcribe(
-                str(scratch_wav),
-                language="en",
-                vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=500),
-            )
-
-            total_duration = media_meta.duration_seconds if media_meta.duration_seconds > 0 else (info.duration or 1.0)
-
-            for segment in segments_gen:
-                if cancel_event.is_set():
-                    raise InterruptedError("Transcription cancelled.")
-
-                seg_obj = TranscriptSegment(
-                    start=segment.start,
-                    end=segment.end,
-                    text=segment.text.strip(),
+            with prevent_app_nap():
+                segments_gen, info = whisper_model.transcribe(
+                    str(scratch_wav),
+                    language="en",
+                    vad_filter=True,
+                    vad_parameters=dict(min_silence_duration_ms=500),
                 )
-                segments_collected.append(seg_obj)
-                segment_cb(seg_obj)
 
-                if total_duration > 0:
-                    pct = min(0.99, max(0.01, segment.end / total_duration))
-                    progress_cb(pct)
-                    status_cb(
-                        f"Transcribing: [{seg_obj.formatted_timestamp} / {media_meta.formatted_duration}] "
-                        f"({int(pct * 100)}%)..."
+                total_duration = media_meta.duration_seconds if media_meta.duration_seconds > 0 else (info.duration or 1.0)
+
+                for segment in segments_gen:
+                    if cancel_event.is_set():
+                        raise InterruptedError("Transcription cancelled.")
+
+                    seg_obj = TranscriptSegment(
+                        start=segment.start,
+                        end=segment.end,
+                        text=segment.text.strip(),
                     )
+                    segments_collected.append(seg_obj)
+                    segment_cb(seg_obj)
+
+                    if total_duration > 0:
+                        pct = min(0.99, max(0.01, segment.end / total_duration))
+                        progress_cb(pct)
+                        status_cb(
+                            f"Transcribing: [{seg_obj.formatted_timestamp} / {media_meta.formatted_duration}] "
+                            f"({int(pct * 100)}%)..."
+                        )
 
         if cancel_event.is_set():
             raise InterruptedError("Transcription cancelled.")
@@ -186,6 +245,7 @@ class TranscriptionEngine:
         cookie_browser_label: str = DEFAULT_COOKIE_BROWSER,
         overwrite: Optional[bool] = None,
         overwrite_prompt_cb: Optional[Callable[[str, Path], Optional[bool]]] = None,
+        cookie_permission_cb: Optional[Callable[[str], bool]] = None,
     ) -> tuple[str, str, str, List[TranscriptSegment], str, str]:
         """
         Executes the full online link pipeline with 100% scratch file hygiene:
@@ -218,6 +278,7 @@ class TranscriptionEngine:
                 status_cb=status_cb,
                 progress_cb=progress_cb,
                 cookie_browser_label=cookie_browser_label,
+                cookie_permission_cb=cookie_permission_cb,
             )
 
             if cancel_event.is_set():
@@ -256,34 +317,35 @@ class TranscriptionEngine:
 
             status_cb(f"🎙️ Transcribing '{clip_info.sanitized_title}'...")
 
-            segments_gen, info = whisper_model.transcribe(
-                str(scratch_wav),
-                language="en",
-                vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=500),
-            )
-
-            total_duration = probed_meta.duration_seconds if probed_meta.duration_seconds > 0 else (info.duration or 1.0)
-
-            for segment in segments_gen:
-                if cancel_event.is_set():
-                    raise InterruptedError("Transcription cancelled.")
-
-                seg_obj = TranscriptSegment(
-                    start=segment.start,
-                    end=segment.end,
-                    text=segment.text.strip(),
+            with prevent_app_nap():
+                segments_gen, info = whisper_model.transcribe(
+                    str(scratch_wav),
+                    language="en",
+                    vad_filter=True,
+                    vad_parameters=dict(min_silence_duration_ms=500),
                 )
-                segments_collected.append(seg_obj)
-                segment_cb(seg_obj)
 
-                if total_duration > 0:
-                    pct = min(0.99, max(0.01, segment.end / total_duration))
-                    progress_cb(pct)
-                    status_cb(
-                        f"Transcribing: [{seg_obj.formatted_timestamp} / {probed_meta.formatted_duration}] "
-                        f"({int(pct * 100)}%)..."
+                total_duration = probed_meta.duration_seconds if probed_meta.duration_seconds > 0 else (info.duration or 1.0)
+
+                for segment in segments_gen:
+                    if cancel_event.is_set():
+                        raise InterruptedError("Transcription cancelled.")
+
+                    seg_obj = TranscriptSegment(
+                        start=segment.start,
+                        end=segment.end,
+                        text=segment.text.strip(),
                     )
+                    segments_collected.append(seg_obj)
+                    segment_cb(seg_obj)
+
+                    if total_duration > 0:
+                        pct = min(0.99, max(0.01, segment.end / total_duration))
+                        progress_cb(pct)
+                        status_cb(
+                            f"Transcribing: [{seg_obj.formatted_timestamp} / {probed_meta.formatted_duration}] "
+                            f"({int(pct * 100)}%)..."
+                        )
 
         if cancel_event.is_set() or clip_info is None or probed_meta is None:
             raise InterruptedError("Transcription cancelled.")
@@ -363,7 +425,7 @@ class TranscriptionEngine:
         source_url: Optional[str] = None,
         platform: Optional[str] = None,
     ) -> str:
-        """Constructs a clean, production-grade Markdown document with YouTube timestamps."""
+        """Constructs a clean, production-grade Markdown document with segment timestamps."""
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         title_str = meta.path.stem if source_url else meta.path.name
         lines = [
@@ -388,7 +450,7 @@ class TranscriptionEngine:
             "",
             "---",
             "",
-            "## YouTube Chapters & Timestamps",
+            "## Timestamped Transcript",
         ])
         if segments:
             for seg in segments:

@@ -24,6 +24,7 @@ from faery_app.models.formatter import TranscriptFormatter
 # Audio Processing & Online Fetcher
 from faery_app.media.processor import MediaProcessor
 from faery_app.media.online_fetcher import OnlineMediaFetcher
+from faery_app.media.recorder import MicrophoneRecorder
 
 # Speech Recognition Engine
 from faery_app.transcription.engine import TranscriptionEngine
@@ -57,6 +58,7 @@ from faery_app.ui.components.segmented_button import FaerySegmentedButton
 from faery_app.ui.dialogs.quick_guide import QuickGuideDialog
 from faery_app.ui.dialogs.about import AboutDialog
 from faery_app.ui.dialogs.overwrite_prompt import OverwritePromptDialog
+from faery_app.ui.dialogs.cookie_permission import CookiePermissionDialog
 from faery_app.ui.views.transcribe_view import TranscribeStudioView
 from faery_app.ui.views.history_view import HistoryLibraryView
 from faery_app.ui.views.radio_dock import RadioPlayerDock
@@ -124,6 +126,7 @@ __all__ = [
     # Media
     "MediaProcessor",
     "OnlineMediaFetcher",
+    "MicrophoneRecorder",
     # Transcription
     "TranscriptionEngine",
     # Radio
@@ -150,6 +153,7 @@ __all__ = [
     "QuickGuideDialog",
     "AboutDialog",
     "OverwritePromptDialog",
+    "CookiePermissionDialog",
     "TranscribeStudioView",
     "HistoryLibraryView",
     "RadioPlayerDock",

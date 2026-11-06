@@ -32,6 +32,7 @@ from faery_app.constants import (
     FAERY_SECONDARY_BTN,
     FAERY_SECONDARY_HOVER,
     FAERY_SECONDARY_TEXT,
+    FAERY_SECONDARY_DISABLED_TEXT,
     FAERY_TEXT_PRIMARY,
     FAERY_TEXT_MUTED,
     FAERY_SAGE_GREEN,
@@ -48,6 +49,7 @@ from faery_app.lifecycle.scratch import ScratchLifecycleManager
 from faery_app.lifecycle.updater import AutoUpdater
 from faery_app.media.online_fetcher import OnlineMediaFetcher
 from faery_app.media.processor import MediaProcessor
+from faery_app.media.recorder import MicrophoneRecorder
 from faery_app.models.formatter import TranscriptFormatter
 from faery_app.models.metadata import MediaMetadata, TranscriptSegment, format_seconds_mm_ss
 from faery_app.radio.art import extract_embedded_art
@@ -57,6 +59,7 @@ from faery_app.transcription.engine import TranscriptionEngine
 from faery_app.ui.assets import BrandAssets
 from faery_app.ui.components.segmented_button import FaerySegmentedButton
 from faery_app.ui.dialogs.about import AboutDialog
+from faery_app.ui.dialogs.cookie_permission import CookiePermissionDialog
 from faery_app.ui.dialogs.overwrite_prompt import OverwritePromptDialog
 from faery_app.ui.dialogs.quick_guide import QuickGuideDialog
 from faery_app.ui.menus import MenuBuilder
@@ -140,6 +143,7 @@ class FaeryTranscriberApp(ctk.CTk):
         self.config = ConfigManager()
         self.history = HistoryManager()
         self.engine = TranscriptionEngine()
+        self.recorder = MicrophoneRecorder()
         self.brand = BrandAssets()
         self.radio_controller = RadioStationController(self.config)
 
@@ -155,9 +159,15 @@ class FaeryTranscriberApp(ctk.CTk):
         self.last_saved_md_path: Optional[str] = None
         self.current_segments: List[TranscriptSegment] = []
 
-        # History view tracking
+        # History view & UI event loop tracking
         self.selected_history_id: Optional[str] = None
         self._radio_after_id: Optional[str] = None
+        self._mic_timer_after_id: Optional[str] = None
+        self._stream_render_after_id: Optional[str] = None
+        self._search_debounce_after_id: Optional[str] = None
+        self._vol_save_after_id: Optional[str] = None
+        self._history_card_widgets: Dict[str, Tuple[ctk.CTkFrame, ctk.CTkLabel, ctk.CTkLabel, str]] = {}
+        self._last_search_results: List[HistoryRecord] = []
 
         # Window configuration & Faery Good Icon
         self.title(f"{APP_NAME}  —  Whimsy is Power")
@@ -194,8 +204,10 @@ class FaeryTranscriberApp(ctk.CTk):
         # Check and pull updates once a week if internet is available (non-blocking)
         self._trigger_background_update_check()
 
-        # Start periodic radio state & playback ticker (250ms)
-        self._radio_after_id = self.after(250, self._radio_tick)
+        # Start periodic radio state & playback ticker (250ms) only when radio is active
+        self.config.data["radio_enabled"] = False
+        if self.radio_toggle.get() == 1 or self.radio_controller.is_playing:
+            self._radio_after_id = self.after(250, self._radio_tick)
 
     def _trigger_background_update_check(self, force: bool = False) -> None:
         """Launches a non-blocking background daemon thread to check and pull GitHub updates."""
@@ -432,8 +444,134 @@ class FaeryTranscriberApp(ctk.CTk):
                     "Please make sure you have permission to save files here, or choose another folder (such as Documents or Desktop).",
                 )
 
+    def _cleanup_mic_recording(self) -> None:
+        """Cancels any active microphone timer and cleans up temporary microphone audio."""
+        try:
+            if self._mic_timer_after_id:
+                self.after_cancel(self._mic_timer_after_id)
+                self._mic_timer_after_id = None
+        except Exception:
+            self._mic_timer_after_id = None
+        try:
+            if hasattr(self, "recorder"):
+                self.recorder.cleanup()
+        except Exception:
+            pass
+
+    def _on_record_mic_clicked(self) -> None:
+        """Toggles live microphone voice recording on or off."""
+        if self.is_transcribing:
+            return
+        if self.recorder.is_recording:
+            self._stop_mic_recording()
+            return
+
+        self._cleanup_mic_recording()
+        try:
+            self.recorder.start_recording()
+        except IOError as err:
+            messagebox.showerror("Disk Space Needed 💾", str(err))
+            return
+        except Exception:
+            messagebox.showerror(
+                "Microphone Not Available 🎙️",
+                "We couldn't access a microphone on your computer.\n\n"
+                "Please make sure a microphone is connected and that microphone permissions are enabled in your system settings.",
+            )
+            return
+
+        self.selected_url = None
+        self.selected_file = None
+        self.selected_metadata = None
+        self.url_entry.delete(0, "end")
+
+        self.record_mic_btn.configure(
+            text="⏹ Stop Recording",
+            fg_color=FAERY_BERRY_RED,
+            hover_color=FAERY_BERRY_HOVER,
+            text_color=FAERY_BERRY_TEXT,
+        )
+        self.select_file_btn.configure(state="disabled")
+        self.url_entry.configure(state="disabled")
+        self.paste_url_btn.configure(state="disabled")
+        self.generate_btn.configure(state="disabled")
+
+        self.file_name_label.configure(text="🎙️ Recording from Microphone...")
+        self.file_meta_label.configure(
+            text="🔴 Recording live audio (00:00)   |   🔒 Saved in temporary scratch space"
+        )
+        self.status_label.configure(
+            text="🔴 Recording microphone (00:00)... Click '⏹ Stop Recording' when finished."
+        )
+        self._mic_timer_after_id = self.after(250, self._recording_tick)
+
+    def _recording_tick(self) -> None:
+        """Updates the live MM:SS microphone recording counter every 250ms."""
+        try:
+            if not self.winfo_exists() or not self.recorder.is_recording:
+                return
+        except Exception:
+            return
+
+        elapsed = self.recorder.get_elapsed_seconds()
+        mm_ss = format_seconds_mm_ss(elapsed)
+        self.file_meta_label.configure(
+            text=f"🔴 Recording live audio ({mm_ss})   |   🔒 Saved in temporary scratch space"
+        )
+        self.status_label.configure(
+            text=f"🔴 Recording microphone ({mm_ss})... Click '⏹ Stop Recording' when finished."
+        )
+        self._mic_timer_after_id = self.after(250, self._recording_tick)
+
+    def _stop_mic_recording(self) -> None:
+        """Stops the active microphone recording and prepares the captured WAV for transcription."""
+        try:
+            if self._mic_timer_after_id:
+                self.after_cancel(self._mic_timer_after_id)
+                self._mic_timer_after_id = None
+        except Exception:
+            self._mic_timer_after_id = None
+
+        self.record_mic_btn.configure(
+            text="🎙️ Record Mic",
+            fg_color=FAERY_SECONDARY_BTN,
+            hover_color=FAERY_SECONDARY_HOVER,
+            text_color=FAERY_SECONDARY_TEXT,
+        )
+        self.select_file_btn.configure(state="normal")
+        self.url_entry.configure(state="normal")
+        self.paste_url_btn.configure(state="normal")
+        self.generate_btn.configure(state="normal")
+
+        try:
+            wav_path, metadata = self.recorder.stop_recording()
+        except Exception as err:
+            self.file_name_label.configure(text="No clip or link selected yet")
+            self.file_meta_label.configure(
+                text="Select a local file, record your microphone, or paste an Instagram, YouTube, TikTok, or Facebook link"
+            )
+            self.status_label.configure(
+                text="✨ Ready — Select a video/audio clip, record your mic, or paste a link to begin."
+            )
+            messagebox.showwarning("Recording Too Short 🎙️", str(err))
+            return
+
+        self.selected_file = wav_path
+        self.selected_metadata = metadata
+        self.selected_url = None
+
+        self.file_name_label.configure(text=f"🎙️ {wav_path.name}")
+        self.file_meta_label.configure(
+            text=f"⏱ Duration: {metadata.formatted_duration}   |   📦 Size: {metadata.formatted_size}   |   🔒 Temp audio cleaned on exit"
+        )
+        mod_key = "⌘Return" if sys.platform == "darwin" else "Ctrl+Enter"
+        self.status_label.configure(
+            text=f"✨ Microphone recording ready ({metadata.formatted_duration}). Click 'Generate Transcript' or press {mod_key}."
+        )
+
     def _activate_online_url(self, url: str) -> None:
         """Sets an online social media URL as the active transcription source."""
+        self._cleanup_mic_recording()
         clean_url = url.strip()
         self.selected_url = clean_url
         self.selected_file = None
@@ -460,7 +598,7 @@ class FaeryTranscriberApp(ctk.CTk):
             if not self.selected_file:
                 self.file_name_label.configure(text="No clip or link selected yet")
                 self.file_meta_label.configure(
-                    text="Select a local file or paste an Instagram, YouTube, TikTok, or Facebook link below"
+                    text="Select a local file, record your microphone, or paste an Instagram, YouTube, TikTok, or Facebook link"
                 )
                 self.status_label.configure(text="✨ Ready — Select a video/audio clip or paste a link to begin.")
 
@@ -515,6 +653,7 @@ class FaeryTranscriberApp(ctk.CTk):
 
         try:
             metadata = MediaProcessor.probe_file(file_path)
+            self._cleanup_mic_recording()
             self.selected_file = file_path
             self.selected_metadata = metadata
             self.selected_url = None
@@ -564,10 +703,33 @@ class FaeryTranscriberApp(ctk.CTk):
         done_evt.wait()
         return result_box[0]
 
+    def _prompt_cookie_permission_dialog(self, platform: str) -> bool:
+        """Displays a Yes/No dialog asking permission to read browser cookies for a login-gated clip."""
+        return CookiePermissionDialog.prompt(platform)
+
+    def _threadsafe_prompt_cookie_permission(self, platform: str) -> bool:
+        """Synchronously dispatches a cookie permission dialog onto the main Tkinter thread from a worker thread."""
+        done_evt = threading.Event()
+        result_box: List[bool] = [False]
+
+        def _ask_on_main():
+            try:
+                result_box[0] = self._prompt_cookie_permission_dialog(platform)
+            finally:
+                done_evt.set()
+
+        self.after(0, _ask_on_main)
+        done_evt.wait()
+        return result_box[0]
+
     def _on_generate_clicked(self) -> None:
         """Validates prerequisites, prompts for overwrite if file exists, and launches worker."""
         if self.is_transcribing:
             return
+        if self.recorder.is_recording:
+            self._stop_mic_recording()
+            if not self.selected_file:
+                return
 
         # Check if a URL was typed/pasted into the entry box
         typed_url = self.url_entry.get().strip()
@@ -633,6 +795,7 @@ class FaeryTranscriberApp(ctk.CTk):
         self._update_stats()
 
         # Update controls
+        self.record_mic_btn.configure(state="disabled")
         self.select_file_btn.configure(state="disabled")
         self.url_entry.configure(state="disabled")
         self.paste_url_btn.configure(state="disabled")
@@ -738,6 +901,7 @@ class FaeryTranscriberApp(ctk.CTk):
                     cookie_browser_label=cookie_browser_label,
                     overwrite=overwrite,
                     overwrite_prompt_cb=self._threadsafe_prompt_overwrite,
+                    cookie_permission_cb=self._threadsafe_prompt_cookie_permission,
                 )
             )
             elapsed_sec = int(time.time() - start_time)
@@ -777,15 +941,19 @@ class FaeryTranscriberApp(ctk.CTk):
         self.after(0, update)
 
     def _async_append_segment(self, segment: TranscriptSegment) -> None:
-        """
-        Streams transcribed text live into the textbox as segments yield.
-        Re-renders active view so clean paragraphs with pauses are displayed immediately in real-time.
-        """
-        def update():
+        """Streams transcribed text live into the textbox, coalescing rapid segment bursts (60ms)."""
+        def enqueue():
             self.current_segments.append(segment)
+            if self._stream_render_after_id is None:
+                self._stream_render_after_id = self.after(60, self._flush_stream_render)
+        self.after(0, enqueue)
+
+    def _flush_stream_render(self) -> None:
+        """Renders coalesced live segments and scrolls to the bottom of the canvas."""
+        self._stream_render_after_id = None
+        if self.current_segments:
             self._render_current_view()
             self.textbox.see("end")
-        self.after(0, update)
 
     def _on_transcription_success(
         self,
@@ -955,7 +1123,14 @@ class FaeryTranscriberApp(ctk.CTk):
             )
 
     def _reset_controls(self) -> None:
+        if self._stream_render_after_id is not None:
+            try:
+                self.after_cancel(self._stream_render_after_id)
+            except Exception:
+                pass
+            self._stream_render_after_id = None
         self.is_transcribing = False
+        self.record_mic_btn.configure(state="normal")
         self.select_file_btn.configure(state="normal")
         self.url_entry.configure(state="normal")
         self.paste_url_btn.configure(state="normal")
@@ -991,7 +1166,7 @@ class FaeryTranscriberApp(ctk.CTk):
             return
 
         choice = self.view_selector.get()
-        if choice == "⏱️ Timecoded (YouTube)":
+        if choice in ("⏱️ Timestamped", "⏱️ Timecoded (YouTube)", "⏱️ Timecoded"):
             text_to_show = TranscriptFormatter.to_timecoded(self.current_segments)
         elif choice == "📝 Raw Text":
             text_to_show = TranscriptFormatter.to_raw(self.current_segments)
@@ -1000,7 +1175,7 @@ class FaeryTranscriberApp(ctk.CTk):
 
         self.textbox.delete("1.0", "end")
         self.textbox.insert("1.0", text_to_show)
-        self._update_stats()
+        self._update_stats(content_text=text_to_show)
 
     def _on_copy_clicked(self) -> None:
         content = self.textbox.get("1.0", "end-1c").strip()
@@ -1029,7 +1204,11 @@ class FaeryTranscriberApp(ctk.CTk):
             return
 
         mode = self.view_selector.get()
-        suffix = "_timecoded.txt" if "Timecoded" in mode else ("_raw.txt" if "Raw" in mode else "_paragraphs.txt")
+        suffix = (
+            "_timecoded.txt"
+            if ("Timestamped" in mode or "Timecoded" in mode)
+            else ("_raw.txt" if "Raw" in mode else "_paragraphs.txt")
+        )
         initial_name = f"{self.selected_file.stem}{suffix}" if self.selected_file else f"transcript{suffix}"
 
         dest = filedialog.asksaveasfilename(
@@ -1106,30 +1285,58 @@ class FaeryTranscriberApp(ctk.CTk):
                 "We couldn't open your output folder. It may have been moved or deleted.\n\nTip: You can select a new output folder under Studio Preferences.",
             )
 
-    def _update_stats(self, event=None) -> None:
-        content = self.textbox.get("1.0", "end-1c").strip()
+    def _update_stats(self, event=None, content_text: Optional[str] = None) -> int:
+        content = (
+            self.textbox.get("1.0", "end-1c").strip()
+            if content_text is None
+            else content_text.strip()
+        )
         if not content:
             self.stats_badge.configure(text="0 words  |  0 characters")
-            return
+            return 0
 
         words = len(content.split())
         chars = len(content)
         self.stats_badge.configure(text=f"{words:,} words  |  {chars:,} characters")
+        return words
 
     # -----------------------------------------------------------------------
     # GUI Event Handlers (History Tab & CRUD Operations)
     # -----------------------------------------------------------------------
     def _on_history_search_changed(self, event=None) -> None:
-        """Handles real-time search typing and toggles the clear pill button."""
+        """Handles real-time search typing (debounced 80ms for keystrokes) and toggles the clear pill button."""
         raw_val = self.history_search_entry.get()
         if raw_val:
             self.history_search_clear_btn.grid(row=0, column=1, padx=(6, 0))
         else:
             self.history_search_clear_btn.grid_forget()
-        self._refresh_history_list(filter_text=raw_val.strip(), resync=False)
+
+        if self._search_debounce_after_id is not None:
+            try:
+                self.after_cancel(self._search_debounce_after_id)
+            except Exception:
+                pass
+            self._search_debounce_after_id = None
+
+        if event is None:
+            self._refresh_history_list(filter_text=raw_val.strip(), resync=False)
+        else:
+            self._search_debounce_after_id = self.after(80, self._execute_debounced_search)
+
+    def _execute_debounced_search(self) -> None:
+        """Executes the debounced history search query."""
+        self._search_debounce_after_id = None
+        if hasattr(self, "history_search_entry"):
+            self._refresh_history_list(filter_text=self.history_search_entry.get().strip(), resync=False)
 
     def _on_clear_search_clicked(self) -> None:
         """Clears the history search box and restores the complete transcript list."""
+        if self._search_debounce_after_id is not None:
+            try:
+                self.after_cancel(self._search_debounce_after_id)
+            except Exception:
+                pass
+            self._search_debounce_after_id = None
         self.history_search_entry.delete(0, "end")
         self.history_search_clear_btn.grid_forget()
         self._refresh_history_list(filter_text="", resync=False)
@@ -1137,14 +1344,16 @@ class FaeryTranscriberApp(ctk.CTk):
 
     def _on_history_search_enter(self, event=None) -> None:
         """Selects the first matching transcript when the user presses Enter in search."""
+        if self._search_debounce_after_id is not None:
+            try:
+                self.after_cancel(self._search_debounce_after_id)
+            except Exception:
+                pass
+            self._search_debounce_after_id = None
         query = self.history_search_entry.get().strip()
-        self._on_history_search_changed()
-        records = self.history.records
-        for r in records:
-            matched, _ = r.matches_query(query)
-            if matched:
-                self._select_history_item(r.id)
-                break
+        self._refresh_history_list(filter_text=query, resync=False)
+        if self._last_search_results:
+            self._select_history_item(self._last_search_results[0].id)
 
     def _refresh_history_list(self, filter_text: Optional[str] = None, resync: bool = False) -> None:
         """Populates the left-hand scrollable library list using instant smart search."""
@@ -1156,11 +1365,13 @@ class FaeryTranscriberApp(ctk.CTk):
         if filter_text is None:
             filter_text = self.history_search_entry.get().strip() if hasattr(self, "history_search_entry") else ""
 
+        self._history_card_widgets.clear()
         for widget in self.history_list_frame.winfo_children():
             widget.destroy()
 
         query = filter_text.strip()
         matching_results = self.history.search_with_snippets(query)
+        self._last_search_results = [rec for rec, _ in matching_results]
 
         total_count = len(records)
         match_count = len(matching_results)
@@ -1232,20 +1443,43 @@ class FaeryTranscriberApp(ctk.CTk):
             )
             w_lbl.pack(fill="x", padx=12, pady=(0, 8))
 
+            self._history_card_widgets[record.id] = (card, title_lbl, w_lbl, record.title)
+
             elements = [card, title_lbl, meta_lbl, w_lbl]
             if snippet_lbl is not None:
                 elements.append(snippet_lbl)
             for elem in elements:
                 elem.bind("<Button-1>", lambda e, r_id=record.id: self._select_history_item(r_id))
 
+    def _update_history_selection_visuals(self, prev_id: Optional[str], new_id: Optional[str]) -> None:
+        """Updates history card selection borders and butterfly badges in-place in O(1) time."""
+        if prev_id and prev_id in self._history_card_widgets:
+            card, title_lbl, _, clean_title = self._history_card_widgets[prev_id]
+            try:
+                card.configure(fg_color=FAERY_CREAM_CARD, border_width=1, border_color=FAERY_CARD_BORDER)
+                title_lbl.configure(text=clean_title)
+            except Exception:
+                pass
+        if new_id and new_id in self._history_card_widgets:
+            card, title_lbl, _, clean_title = self._history_card_widgets[new_id]
+            try:
+                card.configure(fg_color=FAERY_ROSE_CARD, border_width=2, border_color=FAERY_ACTIVE_BORDER)
+                title_lbl.configure(text=f"🦋 {clean_title}")
+            except Exception:
+                pass
+
     def _select_history_item(self, record_id: str) -> None:
         """Selects a transcript from the list and loads its details and preview."""
+        prev_id = self.selected_history_id
         self.selected_history_id = record_id
         record = next((r for r in self.history.records if r.id == record_id), None)
         if not record:
             return
 
-        self._refresh_history_list(filter_text=None, resync=False)
+        if record_id in self._history_card_widgets:
+            self._update_history_selection_visuals(prev_id, record_id)
+        else:
+            self._refresh_history_list(filter_text=None, resync=False)
 
         self.history_title_label.configure(text=record.title)
         self.history_meta_label.configure(
@@ -1269,7 +1503,7 @@ class FaeryTranscriberApp(ctk.CTk):
     def _load_history_preview(self, record: HistoryRecord) -> None:
         choice = self.history_view_selector.get()
         target_path = None
-        if choice == "⏱️ Timecoded":
+        if choice in ("⏱️ Timestamped", "⏱️ Timecoded"):
             target_path = record.timecoded_file or record.paragraphs_file
         elif choice == "📝 Markdown":
             target_path = record.markdown_file or record.paragraphs_file
@@ -1324,7 +1558,7 @@ class FaeryTranscriberApp(ctk.CTk):
 
         choice = self.history_view_selector.get()
         target_path = None
-        if choice == "⏱️ Timecoded":
+        if choice in ("⏱️ Timestamped", "⏱️ Timecoded"):
             target_path = record.timecoded_file
         elif choice == "📝 Markdown":
             target_path = record.markdown_file
@@ -1342,9 +1576,22 @@ class FaeryTranscriberApp(ctk.CTk):
         try:
             with open(target_path, "w", encoding="utf-8") as f:
                 f.write(content)
-            record.word_count = len(content.split())
-            self.history.save()
-            self._refresh_history_list(filter_text=None, resync=False)
+            if hasattr(self.history, "update_record_content"):
+                self.history.update_record_content(
+                    self.selected_history_id,
+                    content,
+                    update_fts=(choice not in ("⏱️ Timestamped", "⏱️ Timecoded")),
+                )
+            else:
+                record.word_count = len(content.split())
+                self.history.save()
+            self.history_meta_label.configure(
+                text=f"Created: {record.created_at}   |   Duration: {record.duration_str}   |   Words: {record.word_count}"
+            )
+            if self.selected_history_id in self._history_card_widgets:
+                _, _, w_lbl, _ = self._history_card_widgets[self.selected_history_id]
+                w_str = f"✨ {record.word_count} words" if record.word_count > 0 else "✨ Transcript ready"
+                w_lbl.configure(text=w_str)
             self.h_save_btn.configure(text="✓ Saved!", fg_color=FAERY_SAGE_GREEN, text_color="#FCF4ED")
             self.after(
                 2000,
@@ -1387,7 +1634,7 @@ class FaeryTranscriberApp(ctk.CTk):
 
         choice = self.history_view_selector.get()
         target_path = (
-            record.timecoded_file if choice == "⏱️ Timecoded"
+            record.timecoded_file if choice in ("⏱️ Timestamped", "⏱️ Timecoded")
             else (record.markdown_file if choice == "📝 Markdown" else record.paragraphs_file)
         )
         if target_path and os.path.exists(target_path):
@@ -1438,7 +1685,15 @@ class FaeryTranscriberApp(ctk.CTk):
             self.config.radio_enabled = True
             if not self.radio_controller.is_playing:
                 self.radio_controller.start()
+            if self._radio_after_id is None:
+                self._radio_after_id = self.after(250, self._radio_tick)
         else:
+            if self._radio_after_id is not None:
+                try:
+                    self.after_cancel(self._radio_after_id)
+                except Exception:
+                    pass
+                self._radio_after_id = None
             self.radio_controller.stop()
             self.radio_player_frame.grid_forget()
             self.config.radio_enabled = False
@@ -1470,9 +1725,20 @@ class FaeryTranscriberApp(ctk.CTk):
         self.radio_controller.prev_song()
 
     def _on_radio_volume_changed(self, val: float) -> None:
-        """Handles volume slider movement."""
-        self.radio_controller.set_volume(float(val))
+        """Handles volume slider movement with 250ms debounced disk persistence."""
+        self.radio_controller.set_volume(float(val), persist=False)
         self._update_radio_mute_icon()
+        if self._vol_save_after_id is not None:
+            try:
+                self.after_cancel(self._vol_save_after_id)
+            except Exception:
+                pass
+        self._vol_save_after_id = self.after(250, self._flush_volume_save)
+
+    def _flush_volume_save(self) -> None:
+        """Persists the current radio volume to disk after slider movement settles."""
+        self._vol_save_after_id = None
+        self.config.save()
 
     def _adjust_radio_volume(self, delta: float) -> None:
         """Adjusts radio volume incrementally (e.g. from arrow key shortcuts)."""
@@ -1580,19 +1846,29 @@ class FaeryTranscriberApp(ctk.CTk):
             pass
         finally:
             try:
-                if self.winfo_exists():
+                if self.winfo_exists() and (
+                    self.radio_toggle.get() == 1
+                    or (hasattr(self, "radio_controller") and self.radio_controller.is_playing)
+                ):
                     self._radio_after_id = self.after(250, self._radio_tick)
+                else:
+                    self._radio_after_id = None
             except Exception:
-                pass
+                self._radio_after_id = None
 
     def destroy(self) -> None:
         """Ensures cleanup of timers, radio playback, and scratch space upon destruction."""
-        try:
-            if hasattr(self, "_radio_after_id") and self._radio_after_id:
-                self.after_cancel(self._radio_after_id)
-                self._radio_after_id = None
-        except Exception:
-            pass
+        self._cleanup_mic_recording()
+        for attr in ("_radio_after_id", "_stream_render_after_id", "_search_debounce_after_id", "_vol_save_after_id"):
+            try:
+                timer_id = getattr(self, attr, None)
+                if timer_id is not None:
+                    self.after_cancel(timer_id)
+                    setattr(self, attr, None)
+                    if attr == "_vol_save_after_id":
+                        self.config.save()
+            except Exception:
+                pass
         try:
             if hasattr(self, "radio_controller"):
                 self.radio_controller.stop()

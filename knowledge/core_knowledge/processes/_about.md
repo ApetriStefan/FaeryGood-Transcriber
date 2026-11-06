@@ -24,10 +24,10 @@ This directory defines key engineering, delivery, and verification workflows.
 
 ### 3. Scratch Hygiene Assurance Workflow
 - Verify `ScratchLifecycleManager` operates under all exit conditions:
-  - Normal transcription exit: temporary directories deleted immediately.
+  - Normal transcription exit: temporary directories (`faery_transcribe_*`, `faery_mic_*`) deleted immediately.
   - User cancellation: active scratch directory purged on cancel signal.
   - Process interruption: `atexit` and signal handlers clean active directories.
-  - Startup sweeper: orphaned folders matching `faery_transcribe_*` and stale Hugging Face cache fragments are cleaned on app boot.
+  - Startup sweeper: orphaned folders matching `faery_transcribe_*` and `faery_mic_*` and stale Hugging Face cache fragments are cleaned on app boot.
 
 ### 4. Release & Standalone Packaging Workflow
 - On macOS: Execute `Build_Mac_App.command` followed by `Create_Mac_DMG.command`.

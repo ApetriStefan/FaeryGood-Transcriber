@@ -60,6 +60,38 @@ class AutoUpdater:
         return (now - last_check) >= cls.WEEK_IN_SECONDS
 
     @classmethod
+    def upgrade_runtime_dependencies(cls) -> bool:
+        """
+        Silently upgrades yt-dlp, yt-dlp-ejs, and deno in non-frozen environments
+        so online video extractors remain up to date.
+        """
+        if cls.is_standalone_bundle():
+            return False
+        creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        try:
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--upgrade",
+                    "yt-dlp[default]",
+                    "yt-dlp-ejs",
+                    "deno",
+                    "-q",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                creationflags=creation_flags,
+                timeout=60,
+            )
+            return proc.returncode == 0
+        except Exception:
+            return False
+
+    @classmethod
     def run_update_check_and_pull(
         cls,
         config: ConfigManager,
@@ -113,6 +145,7 @@ class AutoUpdater:
 
         # Record this check timestamp
         config.last_update_check = time.time()
+        cls.upgrade_runtime_dependencies()
 
         creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 

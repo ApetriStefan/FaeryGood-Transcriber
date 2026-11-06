@@ -23,7 +23,7 @@ flowchart TD
         StudioView["TranscribeStudioView\n(Studio Tab)"]
         HistoryView["HistoryLibraryView\n(History Tab)"]
         RadioDock["RadioPlayerDock\n(104.9 Grift FM Dock)"]
-        Dialogs["Modal Dialogs\n(About, Quick Guide, Overwrite)"]
+        Dialogs["Modal Dialogs\n(About, Quick Guide, Overwrite, CookiePermission)"]
         Menus["MenuBuilder\n(Shortcuts & Menus)"]
         Assets["BrandAssets & FaerySegmentedButton"]
 
@@ -38,7 +38,7 @@ flowchart TD
     subgraph CoreServices ["faery_app Core Subsystems"]
         Config["faery_app.config\n(ConfigManager)"]
         Lifecycle["faery_app.lifecycle\n(ScratchLifecycleManager & AutoUpdater)"]
-        Media["faery_app.media\n(MediaProcessor & OnlineMediaFetcher)"]
+        Media["faery_app.media\n(MediaProcessor, OnlineMediaFetcher, MicrophoneRecorder)"]
         Transcription["faery_app.transcription\n(TranscriptionEngine)"]
         Models["faery_app.models\n(Metadata & TranscriptFormatter)"]
         Radio["faery_app.radio\n(RadioStationController & Art Extractor)"]
@@ -104,14 +104,15 @@ faery_app/
 ├── models/                     # Domain dataclasses & text formatters
 │   ├── __init__.py
 │   ├── metadata.py             # MediaMetadata, TranscriptSegment, OnlineClipInfo
-│   └── formatter.py            # TranscriptFormatter (paragraphs, timecodes, markdown)
-├── media/                      # Audio extraction & network fetching
+│   └── formatter.py            # TranscriptFormatter (paragraphs, timestamped transcripts, markdown)
+├── media/                      # Audio extraction, microphone recording & network fetching
 │   ├── __init__.py
 │   ├── processor.py            # MediaProcessor (FFmpeg 16kHz mono conversion)
-│   └── online_fetcher.py       # OnlineMediaFetcher (yt-dlp download & cookies)
+│   ├── online_fetcher.py       # OnlineMediaFetcher (yt-dlp[default], yt-dlp-ejs, deno & cookies)
+│   └── recorder.py             # MicrophoneRecorder (sounddevice 16kHz mono WAV capture)
 ├── transcription/              # Local speech inference engine
 │   ├── __init__.py
-│   └── engine.py               # TranscriptionEngine (faster-whisper wrapper)
+│   └── engine.py               # TranscriptionEngine (faster-whisper English-optimized wrapper)
 ├── radio/                      # Ambient music & satirical bumpers
 │   ├── __init__.py
 │   ├── types.py                # RadioTrackType enum
@@ -136,7 +137,8 @@ faery_app/
     │   ├── __init__.py
     │   ├── about.py            # AboutDialog
     │   ├── quick_guide.py      # QuickGuideDialog
-    │   └── overwrite_prompt.py # OverwritePromptDialog
+    │   ├── overwrite_prompt.py # OverwritePromptDialog
+    │   └── cookie_permission.py # CookiePermissionDialog
     └── views/
         ├── __init__.py
         ├── transcribe_view.py  # TranscribeStudioView
@@ -161,11 +163,11 @@ faery_app/
   - `ScratchLifecycleManager` in `faery_app/lifecycle/scratch.py`
   - `AutoUpdater` in `faery_app/lifecycle/updater.py`
 - **Responsibilities:**
-  - **Scratch Directory Sandbox:** Provides `safe_scratch_directory()` context manager ensuring temporary files are quarantined in isolated folders (`faery_transcribe_*`).
+  - **Scratch Directory Sandbox:** Provides `safe_scratch_directory()` context manager and `create_persistent_scratch_dir()` ensuring temporary files and microphone captures are quarantined in isolated folders (`faery_transcribe_*`, `faery_mic_*`).
   - **Failsafe Purge Hooks:** Registers handlers across `atexit`, `signal.SIGINT`, `signal.SIGTERM`, and GUI close events to eradicate active scratch data before process termination.
   - **Windows Anti-Lock Retry:** Implements exponential backoff when deleting directories on Windows to overcome temporary file locks held by antivirus scanners or system indexers.
-  - **Startup Orphan Sweeper:** On application launch, silently purges abandoned `faery_transcribe_*` folders and partial Hugging Face `*.incomplete` cache files left by previous system crashes or forced restarts.
-  - **Automated Repository Updates:** Non-blocking 7-day interval check for repository updates via git. Features standalone bundle immunity (`sys.frozen` check) to skip Git operations in packaged binaries, DNS reachability tests, and git stash/pull safety.
+  - **Startup Orphan Sweeper:** On application launch, silently purges abandoned `faery_transcribe_*` and `faery_mic_*` folders and partial Hugging Face `*.incomplete` cache files left by previous system crashes or forced restarts.
+  - **Automated Repository & Extractor Updates:** Non-blocking 7-day interval check for repository updates via git, followed by background upgrades of `yt-dlp[default]`, `yt-dlp-ejs`, and `deno`. Features standalone bundle immunity (`sys.frozen` check) to skip Git operations in packaged binaries, DNS reachability tests, and git stash/pull safety.
 
 ### 2.4 Domain Models & Formatting (`faery_app.models`)
 - **Primary Symbols:**
@@ -174,24 +176,28 @@ faery_app/
 - **Responsibilities:**
   - Strongly typed data structures representing media properties and transcription utterances.
   - **Acoustic Pause Detection:** Clusters continuous speech segments into clean, readable paragraphs when inter-word pauses exceed the configured threshold ($\ge 1.0\text{s} - 1.2\text{s}$).
-  - **YouTube Chapter Timecoding:** Generates structured timestamps formatted as `[MM:SS]` compatible with YouTube description chapter markers.
+  - **Timestamped Transcripts (`[MM:SS]`):** Generates structured segment timestamps formatted as `[MM:SS]` for show notes, interview review, and video reference logs.
   - **Markdown Generation:** Formats complete transcripts with metadata headers and timestamps for documentation export.
 
-### 2.5 Media Processing & Social Extraction (`faery_app.media`)
+### 2.5 Media Processing, Microphone Recording & Social Extraction (`faery_app.media`)
 - **Primary Symbols:**
   - `MediaProcessor` in `faery_app/media/processor.py`
   - `OnlineMediaFetcher` in `faery_app/media/online_fetcher.py`
+  - `MicrophoneRecorder` in `faery_app/media/recorder.py`
 - **Responsibilities:**
-  - **Acoustic Normalization:** Converts arbitrary audio/video formats into 16,000Hz mono 16-bit PCM WAV using statically bundled FFmpeg binaries (`imageio_ffmpeg`).
-  - **Social Media Ingestion:** Uses `yt-dlp` to extract audio streams from Instagram Reels, TikTok videos, YouTube videos/Shorts, and Facebook clips.
-  - **Browser Cookie Bridge:** Reads session cookies (`cookies_from_browser`) from Safari, Chrome, Firefox, Edge, or Brave to unlock login-walled media without collecting or storing user credentials.
+  - **Acoustic Normalization & Native WAV Fast-Path:** Converts arbitrary audio/video formats into 16,000Hz mono 16-bit PCM WAV using statically bundled FFmpeg binaries (`imageio_ffmpeg`). Includes a zero-subprocess native Python `wave` header fast-path (`MediaProcessor._probe_wav_fast`) for instant metadata probing on `.wav` files, and an extraction bypass (`MediaProcessor.is_16k_mono_pcm_wav`) that skips FFmpeg conversion entirely when a source file (such as a built-in microphone recording) is already 16,000Hz mono 16-bit PCM WAV.
+  - **Microphone Voice Recording (`MicrophoneRecorder`):** Captures 16,000Hz mono 16-bit PCM WAV audio directly from the system microphone via `sounddevice.InputStream` into a `faery_mic_*` scratch folder managed by `ScratchLifecycleManager`.
+  - **Social Media Ingestion:** Uses `yt-dlp[default]`, `yt-dlp-ejs`, and a bundled `deno` runtime (`_resolve_js_runtimes`, with module-level path caching to avoid repeated disk lookups) to solve YouTube JavaScript challenges and extract audio streams from Instagram Reels, TikTok videos, YouTube videos/Shorts, and Facebook clips.
+  - **Consent-Gated Browser Cookie Bridge:** Reads session cookies (`cookies_from_browser`) from Safari, Chrome, Firefox, Edge, or Brave (`LOGIN_BROWSER_MAP`) to unlock login-walled media without collecting or storing user credentials. In `Auto / Public` mode, browser cookie access is gated behind an explicit user consent prompt (`CookiePermissionDialog`).
 
 ### 2.6 Local Speech Recognition Engine (`faery_app.transcription`)
 - **Primary Symbol:** `TranscriptionEngine` in `faery_app/transcription/engine.py`.
 - **Responsibilities:**
-  - Wraps `faster_whisper.WhisperModel` running entirely on CPU using `int8` quantization for optimal memory usage and inference speed.
-  - Configured with `cpu_threads=4` and `num_workers=1` to optimize multicore utilization without starving the operating system or UI thread.
-  - Supports model selection between `small.en` (recommended, high accuracy) and `base.en` (rapid draft processing).
+  - Wraps `faster_whisper.WhisperModel` running entirely on CPU using `int8` quantization for optimal memory usage and inference speed, using lazy module importing inside `load_model()` for instant GUI cold-start.
+  - **Hardware & Thermal-Aware CPU Scaling:** Configured with physical-core thread detection via `TranscriptionEngine.get_optimal_cpu_threads()` (querying `sysctl -n hw.physicalcpu` on macOS, `psutil.cpu_count(logical=False)` if available, and heuristics capped at `min(8, max(2, physical_cores))`). Caps thread allocation strictly to physical cores rather than virtual hyperthreads, preventing cache thrashing and thermal throttling on thin-and-light laptops.
+  - **Intel OpenMP Zero Spin-Wait:** Sets `KMP_BLOCKTIME=0` and `OMP_WAIT_POLICY=PASSIVE` at the module entry level before `ctranslate2` initializes, ensuring OpenMP worker threads yield immediately rather than busy-spinning at 100% CPU between audio chunks.
+  - **macOS Sonoma App Nap & Sleep Immunity:** Inference execution loops (`run_transcription` and `run_online_transcription`) are wrapped with the `prevent_app_nap()` context manager, spawning a background `caffeinate -i -w <pid>` process to prevent macOS Sonoma power management from throttling background transcription when the application window is occluded or minimized.
+  - Supports English-optimized model selection between `small.en` (recommended, high accuracy) and `base.en` (rapid draft processing).
   - Emits real-time progress callbacks for responsive UI streaming.
 
 ### 2.7 Ambient Radio Subsystem (`faery_app.radio`)
@@ -208,8 +214,8 @@ faery_app/
 ### 2.8 History Library & Search Engine (`faery_app.history`)
 - **Primary Symbols:**
   - `HistoryRecord`, `SearchResult`, `HistoryManager` in `faery_app/history/history_manager.py`
-- **Embedded SQLite Storage Architecture:**
-  - **Database Location:** Backed by an embedded SQLite database persisted at `~/.faery_transcriber.db` (resolved via `constants.DB_PATH`), ensuring crash-safe ACID transactions.
+  - **Embedded SQLite Storage Architecture:**
+  - **Database Location:** Backed by an embedded SQLite database persisted at `~/.faery_transcriber.db` (resolved via `constants.DB_PATH`), ensuring crash-safe ACID transactions with a `@contextmanager` connection lifecycle that deterministically closes `sqlite3.Connection` handles.
   - **High-Concurrency WAL Mode:** Initialized with `PRAGMA journal_mode=WAL;` (Write-Ahead Logging), allowing concurrent reader connections without blocking active write operations. Configured with `PRAGMA synchronous=NORMAL;`, `PRAGMA busy_timeout=10000;`, and `PRAGMA foreign_keys=ON;` for data safety and lock resilience.
   - **Relational Schema (`transcriptions` table):**
     ```sql
@@ -247,34 +253,38 @@ faery_app/
     - `search_with_snippets(query)` utilizes FTS5 prefix token matching (`"term"*`), BM25-based relevance ranking, and the SQLite `snippet(transcriptions_fts, 2, '', '', '...', 15)` function to return contextual speech quotes (e.g., `💬 "...muffled rhythm of rain..."`).
     - Multi-tiered fallback evaluates FTS5 matches alongside SQL `LIKE` metadata matching across titles, filenames, models, dates, and tags.
     - Returns `SearchResult` objects that inherit from `HistoryRecord` while supporting 2-tuple unpacking (`record, snippet = result`) for complete backwards compatibility.
-  - **Seamless Legacy JSON Migration:**
-    - On initialization (`_migrate_legacy_json`), detects legacy JSON history at `~/.faery_transcriptions_history.json`.
-    - If present, deserializes all records, executes atomic insertions and FTS5 indexing, and renames the legacy file to `~/.faery_transcriptions_history.json.bak` to prevent re-importing while safeguarding historical data.
-  - **Disk Synchronization:**
-    - `sync_with_directory(output_dir)` discovers external or untracked transcripts in `Documents/Transcriptions`, indexes newly discovered files, and cleans up records whose backing files no longer exist on disk.
+  - **Seamless Legacy JSON Migration & Batched Disk Synchronization:**
+    - On initialization (`_migrate_legacy_json`), detects legacy JSON history at `~/.faery_transcriptions_history.json`, deserializes all records, executes a single batched SQLite transaction for insertions and FTS5 indexing, and renames the legacy file to `~/.faery_transcriptions_history.json.bak`.
+    - `sync_with_directory(output_dir)` discovers external or untracked transcripts in `Documents/Transcriptions`, batches all insertions and stale-record cleanups into a single atomic SQLite transaction, and returns `bool` indicating whether any records changed.
+    - `update_record_content(record_id, new_text)` performs an $O(1)$ targeted update of `word_count`, `updated_at`, and the single record's `transcriptions_fts` entry without re-scanning the output directory.
 
 ### 2.9 Platform & System Utilities (`faery_app.utils`)
 - **Primary Symbols:**
   - System utilities in `faery_app/utils/system.py` (`get_verified_ffmpeg_exe`, `check_free_disk_space`, `open_system_folder`, `open_system_file`, `play_completion_sound`, `is_directory_writable`)
-  - macOS integrations in `faery_app/utils/macos.py` (`ensure_macos_app_installed`, `_create_macos_app_bundle`, `_register_macos_app_bundle`)
+  - macOS integrations in `faery_app/utils/macos.py` (`ensure_macos_app_installed`, `_create_macos_app_bundle`, `_register_macos_app_bundle`, `prevent_app_nap`)
 - **Responsibilities:**
-  - Resolves static FFmpeg binaries and verifies free disk space before transcription tasks.
+  - Resolves static FFmpeg binaries (with in-memory path and `os.path.exists` caching to eliminate redundant filesystem probes) and verifies free disk space before transcription tasks.
   - Native file manager integration (`explorer.exe` on Windows, `open` on macOS).
+  - **macOS App Nap Prevention:** Provides the `prevent_app_nap()` context manager managing the `caffeinate -i -w <pid>` execution lifecycle during heavy background inference tasks.
   - **Zero-Sudo macOS Application Installer:** Automatically generates and installs `Faery Good Transcriber.app` into `/Applications` (or `~/Applications` fallback), strips quarantine flags (`xattr -cr`), and registers with LaunchServices (`lsregister -f`) for instant Spotlight discovery (`⌘+Space`).
 
 ### 2.10 Graphical User Interface Layer (`faery_app.ui`)
 - **Primary Symbols:**
   - `FaeryTranscriberApp` in `faery_app/ui/main_window.py`
   - Views: `TranscribeStudioView`, `HistoryLibraryView`, `RadioPlayerDock` in `faery_app/ui/views/`
-  - Dialogs: `AboutDialog`, `QuickGuideDialog`, `OverwritePromptDialog` in `faery_app/ui/dialogs/`
+  - Dialogs: `AboutDialog`, `QuickGuideDialog`, `OverwritePromptDialog`, `CookiePermissionDialog` in `faery_app/ui/dialogs/`
   - Components: `FaerySegmentedButton` in `faery_app/ui/components/`
   - Assets: `BrandAssets` in `faery_app/ui/assets.py`
   - Menus: `MenuBuilder` in `faery_app/ui/menus.py`
 - **Responsibilities:**
   - CustomTkinter window management with warm palette styling ("Faery Good" aesthetic).
-  - View orchestration: Dual-tab interface switching between Transcribe Studio and History Library.
+  - View orchestration: Dual-tab interface switching between Transcribe Studio and History Library, with non-blocking startup (`after(250, ...)` background directory sync).
+  - **High-Throughput UI Rendering & Event Handling:**
+    - **60ms Coalesced Live Segment Streaming:** Buffers incoming `TranscriptSegment` callbacks and flushes incremental updates to the studio textbox at most once every 60ms (`_flush_pending_segments`), eliminating $O(N^2)$ full-document re-renders during live inference.
+    - **$O(1)$ In-Place History Card Highlighting & 80ms Debounced Search:** Selecting a History card updates only the previous and newly selected card widgets in place without destroying or recreating the scrollable widget tree; keystroke search queries are debounced by 80ms (`_on_history_search_changed`).
+    - **Demand-Driven Radio Polling (0 Hz Idle):** The 4 Hz radio UI tick loop (`_schedule_radio_poll`) runs strictly while the Ambient Radio is enabled and cancels its timer completely when toggled off.
   - Bottom-docked collapsible ambient radio player.
-  - Keyboard shortcut dispatcher (`⌘Return`/`Ctrl+Enter`, `⌘L`/`Ctrl+L`, `⌘O`/`Ctrl+O`, `⌘R`/`Ctrl+R`).
+  - Keyboard shortcut dispatcher (`⌘Return`/`Ctrl+Enter`, `⌘L`/`Ctrl+L`, `⌘O`/`Ctrl+O`, `⌘D`/`Ctrl+D`, `⌘R`/`Ctrl+R`).
 
 ---
 

@@ -13,17 +13,18 @@
 [![Whisper faster-whisper](https://img.shields.io/badge/AI%20Engine-faster--whisper-blue.svg?style=flat-square)](https://github.com/SYSTRAN/faster-whisper)
 [![Faery Good Aesthetic](https://img.shields.io/badge/aesthetic-Whimsical%20Apothecary-FCECF5.svg?style=flat-square&labelColor=7A2DB4)](https://faerygood.com/)
 
-A delightful, 100% private, on-device desktop transcription studio and historical library. Built specifically for **Instagram Reels captions**, **TikTok subtitles**, and **YouTube video chapters**. Developed and tested on **Windows 10/11**, and engineered to run natively on **macOS** (Sonoma, Ventura, Monterey on Intel `x86_64` and Apple Silicon).
+A delightful, 100% private, on-device desktop transcription studio and historical library. Built specifically for **Instagram Reels captions**, **TikTok subtitles**, and **timestamped transcripts**. Developed and tested on **Windows 10/11**, and engineered to run natively on **macOS** (Sonoma, Ventura, Monterey on Intel `x86_64` and Apple Silicon).
 
 ---
 
 ## ✨ Features at a Glance
 
-* **🔒 100% On-Device & Private:** Powered by `faster-whisper` running locally on your computer's CPU (`int8` quantization with 4 parallel worker threads). Your videos, voice memos, and transcripts **never** touch the cloud, require no third-party API keys, and incur zero recurring costs.
+* **🔒 100% On-Device & Private:** Powered by `faster-whisper` running locally on your computer's CPU (`int8` quantization with adaptive multi-core CPU worker threads, up to 8 threads) using English-optimized speech models (`small.en` and `base.en`). Your videos, voice memos, and transcripts **never** touch the cloud, require no third-party API keys, and incur zero recurring costs.
+* **🎙️ Built-in Microphone Recording (`⌘D` / `Ctrl+D`):** Record voice notes and ideas directly inside the studio (`16kHz` mono PCM WAV via `sounddevice`) with a live `MM:SS` recording timer. Recordings are captured into a private scratch space, automatically transcribed on stop, and wiped cleanly afterward.
 * **🌐 Paste Any Social Link (Instagram, TikTok, YouTube, Facebook):** Simply copy a link and click **`📋 Paste Link`** (`⌘L` / `Ctrl+L`). Audio is extracted into a temporary scratch space, resampled, transcribed, and **immediately destroyed**—leaving zero temporary media clutter on your hard drive.
 * **📄 Smart Acoustic Formatting:**
   * **`📄 Clean Paragraphs`:** Automatically detects natural speech pauses ($\ge 1.0$s) to format speech into clean, readable paragraphs ready to paste into Instagram captions, newsletters, or blog posts.
-  * **`⏱️ Timecoded (YouTube)`:** Automatically formats speech timestamps (`[00:15] ...`) ready to paste directly into YouTube video descriptions as instant clickable video chapters.
+  * **`⏱️ Timestamped`:** Automatically formats speech segments with `[MM:SS]` timestamps ideal for show notes, interview review, and video reference logs.
   * **`📝 Raw Text`:** Unformatted, continuous text stream ideal for note-taking apps or LLM prompts.
 * **📜 Persistent History Library & Instant FTS5 Spoken-Word Search:**
   * View, search, rename, edit, copy, and delete past transcripts in the **`📜 History`** tab (`⌘2` / `Ctrl+2`).
@@ -94,7 +95,7 @@ flowchart LR
     C --> D["Temporary Audio<br/>(Downloaded to Scratch)"]
     D --> E["faster-whisper<br/>(100% Local CPU AI)"]
     E --> F["Zero-Footprint Cleanup<br/>(Scratch Audio Wiped)"]
-    F --> G["Pick Format<br/>(Paragraphs or Chapters)"]
+    F --> G["Pick Format<br/>(Paragraphs or Timestamped)"]
     G --> H["Copy to Clipboard<br/>(⌘C / Ctrl+C)"]
 ```
 
@@ -104,18 +105,18 @@ flowchart LR
 4. Click **`✨ Generate Transcript`** (or press `⌘Return` / `Ctrl+Enter`).
    * The app extracts the audio stream into a private temporary scratch folder, converts it, streams the transcript live onto your screen, and **immediately deletes the audio download**.
    * When complete, a gentle apothecary chime plays!
-5. Toggle between **`📄 Clean Paragraphs`** (for social captions/blogs) and **`⏱️ Timecoded`** (for YouTube chapters).
+5. Toggle between **`📄 Clean Paragraphs`** (for social captions/blogs) and **`⏱️ Timestamped`** (for `[MM:SS]` segment timestamps).
 6. Click **`📋 Copy to Clipboard`** (`⌘C` / `Ctrl+C`) and paste it directly into your post!
 
 ---
 
 ## Workflow 2: Transcribe a Local Video, Podcast, or Voice Memo
 
-1. Click **`📁 Select Video or Audio…`** (or press `⌘O` / `Ctrl+O`).
+1. Click **`📁 Select Video or Audio…`** (or press `⌘O` / `Ctrl+O`) to pick a file, or click **`🎙️ Record Mic`** (`⌘D` / `Ctrl+D`) to record a voice note directly from your microphone.
 2. Select any media file on your computer (`.mp4`, `.mov`, `.m4a`, `.mp3`, `.wav`, `.mkv`, `.aac`, `.flac`).
-3. Select your preferred **Transcription Engine**:
-   * **`High Accuracy (small.en - Recommended)`:** Outstanding punctuation, vocabulary, and grammar.
-   * **`Standard (base.en - Fast)`:** 2x faster, perfect for short 30-second clips or quick drafts.
+3. Select your preferred **English Transcription Engine** (specifically tuned and optimized for English speech):
+   * **`High Accuracy (small.en - Recommended)`:** Outstanding English punctuation, vocabulary, and grammar.
+   * **`Standard (base.en - Fast)`:** 2x faster English transcription, perfect for short 30-second clips or quick drafts.
 4. Click **`✨ Generate Transcript`** (`⌘Return` / `Ctrl+Enter`).
 5. Output text files (`.txt`) and Markdown files (`.md`) are automatically saved to your output directory (`Documents/Transcriptions/` by default).
 
@@ -152,8 +153,8 @@ Unlike sketchy web downloaders that ask you to type your personal Instagram user
 * Because you are already logged into Instagram in your web browser, the app can fetch the temporary audio stream seamlessly as if you were viewing it yourself!
 
 ### Which setting should you use?
-* **`Auto / Public (Recommended)`:** Keep this selected by default! The app will always download public clips anonymously without touching any browser. It will only attempt to read browser cookies if Instagram specifically blocks access with a login wall.
-* **`Safari (macOS)` / `Chrome` / `Firefox` / `Edge` / `Brave`:** If an Instagram Reel fails with a "Login required" message, simply switch this dropdown to the browser where you are logged into Instagram, and click **Generate Transcript** again!
+* **`Auto / Public (Recommended)`:** Keep this selected by default! The app will always download public clips anonymously without touching any browser. If a clip is behind a login wall, the app displays a permission dialog asking if you want to allow browser cookie access before reading any cookies from Safari, Chrome, Edge, Brave, or Firefox.
+* **`Safari (macOS)` / `Chrome` / `Firefox` / `Edge` / `Brave`:** If an Instagram Reel fails with a "Login required" message, you can also directly switch this dropdown to the browser where you are logged into Instagram, and click **Generate Transcript** again!
 
 ---
 
@@ -175,6 +176,7 @@ Toggle the **`📻 Radio`** switch in the top toolbar (or press `⌘R` / `Ctrl+R
 | Action | macOS Shortcut | Windows Shortcut | Context |
 | :--- | :--- | :--- | :--- |
 | **Select Media File** | `⌘O` | `Ctrl+O` | Anywhere |
+| **Record from Microphone** | `⌘D` | `Ctrl+D` | Anywhere |
 | **Paste Social Link (IG/YT/TikTok/FB)** | `⌘L` | `Ctrl+L` | Anywhere |
 | **Open Output Folder in Finder / Explorer** | `⇧⌘O` | `Ctrl+Shift+O` | Anywhere |
 | **Generate Transcript** | `⌘Return` | `Ctrl+Enter` | Studio Tab |
@@ -210,16 +212,16 @@ Every screen and control is designed to reflect Ericka's whimsical aesthetic:
 
 Faery Good Transcriber is engineered to be self-contained, robust, and completely private:
 
-1. **Audio Extraction & Resampling (Static FFmpeg):**  
-   Whether you select a 4K `.mov` video, an `.mp4` reel, or paste a web link, bundled static FFmpeg binaries extract the audio and resample it into a clean **16,000Hz mono 16-bit PCM WAV stream**. This matches the exact acoustic resolution expected by Whisper's neural network.
+1. **Audio Extraction, Resampling & Native WAV Fast-Path (Static FFmpeg):**  
+   Whether you select a 4K `.mov` video, an `.mp4` reel, or paste a web link, bundled static FFmpeg binaries extract the audio and resample it into a clean **16,000Hz mono 16-bit PCM WAV stream**. Standard `.wav` files use a zero-subprocess native Python `wave` header fast-path for instant metadata inspection, and pre-normalized 16kHz mono PCM recordings (such as built-in microphone voice notes) bypass FFmpeg conversion entirely.
 2. **On-Device AI Speech Recognition (`faster-whisper`):**  
-   Runs OpenAI's Whisper model locally on your computer's CPU (`int8` quantization with 4 parallel worker threads). No audio is transmitted over the internet, and inference runs at $\approx 3\times$ to $6\times$ real-time speed on modern quad-core processors.
+   Runs OpenAI's Whisper model locally on your computer's CPU (`int8` quantization with adaptive multi-core CPU worker threads, up to 8 threads) with lazy model loading for instant app launch and 60ms coalesced real-time text streaming. No audio is transmitted over the internet, and inference runs at $\approx 3\times$ to $8\times$ real-time speed on modern processors.
 3. **Smart Pause & Acoustic Pacing Formatter:**  
    Analyzes silence intervals between words in real time. Silences $\ge 1.0$ second automatically trigger clean paragraph breaks, matching your natural speaking cadence.
 4. **Guaranteed Scratch Hygiene (`ScratchLifecycleManager`):**  
-   All temporary audio processing and online downloads occur inside isolated scratch directories (`faery_transcribe_*`). The lifecycle manager binds to application exit, cancellation handlers, and POSIX/Windows signals (`SIGTERM`, `SIGINT`) to guarantee that temporary audio files are purged immediately under all circumstances.
-5. **Background Self-Updating (`AutoUpdater`):**  
-   When executed from a git clone, the app checks if 7 days have elapsed since the last check. If an internet connection is available, it pulls updates in a non-blocking daemon thread. Standalone frozen builds safely bypass this check.
+   All temporary audio processing, microphone voice recordings (`faery_mic_*`), and online downloads (`faery_transcribe_*`) occur inside isolated scratch directories. The lifecycle manager binds to application exit, cancellation handlers, and POSIX/Windows signals (`SIGTERM`, `SIGINT`) to guarantee that temporary audio files are purged immediately under all circumstances.
+5. **Resilient Social Extraction & Background Self-Updating (`OnlineMediaFetcher` & `AutoUpdater`):**  
+   Online extraction uses `yt-dlp[default]`, `yt-dlp-ejs`, and the bundled `deno` runtime to solve YouTube's JavaScript challenges out of the box without system-level setup. When executed from a git clone, `AutoUpdater` checks if 7 days have elapsed since the last check and automatically keeps `yt-dlp[default]`, `yt-dlp-ejs`, and `deno` updated alongside git commits in a non-blocking daemon thread. Standalone frozen builds safely bypass git checks.
 6. **Modular Package Architecture (`faery_app/`):**  
    The application is organized into a clean, modular Python package (`faery_app/`) with cleanly decoupled subsystems (`config`, `lifecycle`, `models`, `media`, `transcription`, `radio`, `history`, `utils`, `ui`), fronted by `app.py` as a lightweight backwards-compatible facade and entry point.
 7. **Embedded SQLite Database & Instant FTS5 Search:**  
@@ -289,7 +291,7 @@ TranscriptionEngine/
 │   ├── config/                 # ⚙️ Persistent configuration manager (config.json)
 │   ├── lifecycle/              # 🧹 ScratchLifecycleManager (sandbox hygiene) & AutoUpdater
 │   ├── models/                 # 📄 Domain models (Metadata, Segments) & TranscriptFormatter
-│   ├── media/                  # 🎬 MediaProcessor (FFmpeg 16kHz WAV) & OnlineMediaFetcher (yt-dlp)
+│   ├── media/                  # 🎬 MediaProcessor (FFmpeg 16kHz WAV), OnlineMediaFetcher (yt-dlp/deno) & recorder.py (MicrophoneRecorder)
 │   ├── transcription/          # 🧠 TranscriptionEngine (faster-whisper local CPU inference)
 │   ├── radio/                  # 📻 RadioStationController (104.9 Grift FM) & album art
 │   ├── history/                # 📜 HistoryManager (SQLite & FTS5 full-text search)

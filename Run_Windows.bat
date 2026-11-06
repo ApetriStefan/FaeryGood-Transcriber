@@ -9,7 +9,7 @@ echo ==================================================
 
 :: 1. If virtual environment exists and is healthy, launch immediately
 if exist ".venv\Scripts\python.exe" (
-    .venv\Scripts\python.exe -c "import customtkinter, faster_whisper, imageio_ffmpeg, PIL, yt_dlp, pygame" >nul 2>&1
+    .venv\Scripts\python.exe -c "import customtkinter, faster_whisper, imageio_ffmpeg, PIL, yt_dlp, yt_dlp_ejs, deno, sounddevice, pygame" >nul 2>&1
     if not errorlevel 1 (
         echo Starting Faery Good Transcriber...
         call .venv\Scripts\activate.bat

@@ -33,7 +33,7 @@ class AboutDialog(ctk.CTkToplevel):
         super().__init__(parent)
         self.parent_app = parent
         self.title(f"About {APP_NAME}")
-        self.geometry("500x420")
+        self.geometry("500x440")
         self.resizable(False, False)
         self.attributes("-topmost", True)
         self.configure(fg_color=FAERY_BG)
@@ -90,11 +90,12 @@ class AboutDialog(ctk.CTkToplevel):
             "Custom-Crafted Desktop Video & Audio Transcriber for Ericka & Faery Good\n\n"
             "• Brand & Art Direction: Inspired by FaeryGood.com\n"
             "• AI Engine: faster-whisper (CTranslate2 int8 CPU, 4 threads)\n"
+            "• Language: Optimized for English speech (small.en & base.en)\n"
             "• Target Systems: macOS Sonoma (Intel x86_64) & Windows 11\n"
             "• Audio Extraction: Bundled static FFmpeg (Zero external setup)\n"
             "• Hygiene Guarantee: 100% automatic cleanup of temporary audio files\n"
             "• Privacy: 100% offline, on-device transcription\n\n"
-            "Crafted with love & whimsy for effortless reels, stories, and video chapters."
+            "Crafted with love & whimsy for effortless reels, voice notes, and timestamped transcripts."
         )
 
         lbl = ctk.CTkLabel(

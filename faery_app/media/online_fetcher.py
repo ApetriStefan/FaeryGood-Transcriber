@@ -4,7 +4,9 @@ Online Media Fetcher for Faery Good Transcriber (yt-dlp integration)
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import sys
 import threading
 import urllib.parse
@@ -24,6 +26,7 @@ class OnlineMediaFetcher:
     """
 
     ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+    _cached_deno_exe: Optional[str] = None
 
     @staticmethod
     def is_valid_url(url_str: str) -> bool:
@@ -77,12 +80,54 @@ class OnlineMediaFetcher:
             return (
                 f"{platform} requires you to be signed in to access this clip (or the post is private).\n\n"
                 "💡 Tip: In the 'Social Login' dropdown under Studio Preferences, select the browser "
-                "where you are logged into your account (e.g. Chrome, Safari, or Edge) and click Generate again!"
+                "where you are logged into your account (e.g. Chrome, Safari, Brave, Edge, or Firefox) and click Generate again!"
             )
         return (
             f"Could not download audio from {platform} link. "
             "Please check that the clip is public and that your computer is connected to the internet."
         )
+
+    @classmethod
+    def _get_deno_executable(cls) -> Optional[str]:
+        """Resolves and caches the bundled or installed Deno JavaScript runtime for yt-dlp."""
+        if cls._cached_deno_exe and os.path.isfile(cls._cached_deno_exe):
+            parent_dir = str(Path(cls._cached_deno_exe).parent)
+            current_path = os.environ.get("PATH", "")
+            path_parts = current_path.split(os.pathsep) if current_path else []
+            if parent_dir not in path_parts:
+                os.environ["PATH"] = f"{parent_dir}{os.pathsep}{current_path}" if current_path else parent_dir
+            return cls._cached_deno_exe
+
+        deno_bin: Optional[str] = None
+        try:
+            import deno
+            cand = deno.find_deno_bin()
+            if cand and Path(cand).is_file():
+                deno_bin = str(cand)
+        except Exception:
+            pass
+
+        if not deno_bin:
+            which_deno = shutil.which("deno")
+            if which_deno and Path(which_deno).is_file():
+                deno_bin = which_deno
+
+        if not deno_bin and getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+            bundled = Path(sys._MEIPASS) / ("deno.exe" if sys.platform == "win32" else "deno")
+            if bundled.is_file():
+                deno_bin = str(bundled)
+
+        if deno_bin:
+            resolved = Path(deno_bin).resolve()
+            resolved_str = str(resolved)
+            cls._cached_deno_exe = resolved_str
+            parent_dir = str(resolved.parent)
+            current_path = os.environ.get("PATH", "")
+            path_parts = current_path.split(os.pathsep) if current_path else []
+            if parent_dir not in path_parts:
+                os.environ["PATH"] = f"{parent_dir}{os.pathsep}{current_path}" if current_path else parent_dir
+            return resolved_str
+        return None
 
     @classmethod
     def download_audio_to_temp(
@@ -93,6 +138,7 @@ class OnlineMediaFetcher:
         status_cb: Optional[Callable[[str], None]] = None,
         progress_cb: Optional[Callable[[float], None]] = None,
         cookie_browser_label: str = DEFAULT_COOKIE_BROWSER,
+        cookie_permission_cb: Optional[Callable[[str], bool]] = None,
     ) -> OnlineClipInfo:
         """
         Downloads only the best audio stream for the given URL into `temp_dir`.
@@ -142,18 +188,21 @@ class OnlineMediaFetcher:
             "socket_timeout": 20,
             "retries": 2,
         }
+        deno_bin = cls._get_deno_executable()
+        if deno_bin:
+            base_opts["js_runtimes"] = {"deno": {"path": deno_bin}}
 
         chosen_browser = COOKIE_BROWSER_OPTIONS.get(cookie_browser_label)
         attempts: List[Optional[str]] = []
         if chosen_browser:
             attempts.append(chosen_browser)
         else:
-            # First try public (no cookies); if auth fails, automatically try installed browsers
+            # First try public (no cookies); if auth fails, ask permission before trying installed browsers
             attempts.append(None)
             if sys.platform == "darwin":
-                attempts.extend(["safari", "chrome", "firefox"])
+                attempts.extend(["safari", "chrome", "brave", "firefox", "edge"])
             else:
-                attempts.extend(["chrome", "edge", "firefox"])
+                attempts.extend(["chrome", "edge", "brave", "firefox"])
 
         info_dict: Optional[dict] = None
         last_error: Optional[Exception] = None
@@ -195,6 +244,8 @@ class OnlineMediaFetcher:
                         for w in ("login", "cookie", "sign in", "private", "rate-limit", "403", "forbidden", "instagram", "facebook")
                     )
                     if not needs_auth:
+                        break
+                    if cookie_permission_cb is None or not cookie_permission_cb(platform):
                         break
                 else:
                     continue

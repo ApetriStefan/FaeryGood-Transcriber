@@ -106,7 +106,7 @@ class ScratchLifecycleManager:
         # 1. Sweep system temp directory for orphaned audio conversion folders
         try:
             temp_root = Path(tempfile.gettempdir())
-            for prefix in ("faery_transcribe_*", "faery_scratch_*"):
+            for prefix in ("faery_transcribe_*", "faery_scratch_*", "faery_mic_*"):
                 for item in temp_root.glob(prefix):
                     if item.is_dir() and item.resolve() not in cls._active_scratch_dirs:
                         cls.safe_remove_tree(item)

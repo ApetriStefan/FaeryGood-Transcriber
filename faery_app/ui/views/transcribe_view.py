@@ -71,6 +71,21 @@ class TranscribeStudioView:
         )
         source_badge.grid(row=0, column=0, sticky="w")
 
+        app.record_mic_btn = ctk.CTkButton(
+            file_top_bar,
+            text="🎙️ Record Mic",
+            font=app.font_body_bold,
+            fg_color=FAERY_SECONDARY_BTN,
+            hover_color=FAERY_SECONDARY_HOVER,
+            text_color=FAERY_SECONDARY_TEXT,
+            text_color_disabled=FAERY_SECONDARY_DISABLED_TEXT,
+            corner_radius=14,
+            command=app._on_record_mic_clicked,
+            width=126,
+            height=28,
+        )
+        app.record_mic_btn.grid(row=0, column=1, sticky="e", padx=(0, 6))
+
         app.select_file_btn = ctk.CTkButton(
             file_top_bar,
             text="📁 Select Local File…",
@@ -84,7 +99,7 @@ class TranscribeStudioView:
             width=158,
             height=28,
         )
-        app.select_file_btn.grid(row=0, column=1, sticky="e")
+        app.select_file_btn.grid(row=0, column=2, sticky="e")
 
         app.file_name_label = ctk.CTkLabel(
             file_card,
@@ -97,7 +112,7 @@ class TranscribeStudioView:
 
         app.file_meta_label = ctk.CTkLabel(
             file_card,
-            text="Select a local file or paste an Instagram, YouTube, TikTok, or Facebook link below",
+            text="Select a local file, record your microphone, or paste an Instagram, YouTube, TikTok, or Facebook link",
             font=app.font_small,
             text_color=FAERY_TEXT_MUTED,
             anchor="w",
@@ -302,7 +317,7 @@ class TranscribeStudioView:
 
         app.view_selector = FaerySegmentedButton(
             result_header,
-            values=["📄 Clean Paragraphs", "⏱️ Timecoded (YouTube)", "📝 Raw Text"],
+            values=["📄 Clean Paragraphs", "⏱️ Timestamped", "📝 Raw Text"],
             command=app._on_view_mode_changed,
             height=30,
             corner_radius=15,
