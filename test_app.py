@@ -818,7 +818,7 @@ class TestFaeryRadio(unittest.TestCase):
             self.assertGreater(len(controller.music_files), 0, "Should discover music files")
             music_names = [p.name for p in controller.music_files]
             self.assertIn("The Green Leaf Thief.mp3", music_names, "Should discover 'The Green Leaf Thief.mp3'")
-            self.assertIn("Where You Gonna Run_.mp3", music_names, "Should discover 'Where You Gonna Run_.mp3'")
+            self.assertIn("Where You Gonna Run.mp3", music_names, "Should discover 'Where You Gonna Run.mp3'")
             self.assertIsNotNone(controller.liability_file, "Should discover Liability.mp3")
             self.assertEqual(controller.liability_file.name, "Liability.mp3")
             self.assertIsNotNone(controller.grift_file, "Should discover Grift.mp3")
