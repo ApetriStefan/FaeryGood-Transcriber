@@ -181,7 +181,8 @@ class TranscriptionEngine:
             total_duration = media_meta.duration_seconds if media_meta.duration_seconds > 0 else 1.0
             hist_rtf = self.config_manager.get_model_rtf(model_name)
             initial_eta = max(1, round(total_duration * hist_rtf))
-            status_cb(f"Transcribing audio: 0% · ~{format_eta(initial_eta)} remaining...")
+            tea_hint = " ☕ (time for tea!)" if initial_eta >= 120 else ""
+            status_cb(f"Transcribing audio: 0% · ~{format_eta(initial_eta)} remaining{tea_hint}...")
 
             t_start = time.monotonic()
             with prevent_app_nap():
@@ -215,10 +216,11 @@ class TranscriptionEngine:
                         rtf_eff = (1.0 - weight) * hist_rtf + weight * rtf_live
                         rem_audio = max(0.0, total_duration - segment.end)
                         eta_sec = max(1, round(rem_audio * rtf_eff))
+                        tea_hint = " ☕ (time for tea!)" if eta_sec >= 120 else ""
                         progress_cb(progress)
                         status_cb(
                             f"Transcribing: [{format_timestamp(segment.end)} / {format_timestamp(total_duration)}] "
-                            f"({int(progress * 100)}%) · ~{format_eta(eta_sec)} remaining"
+                            f"({int(progress * 100)}%) · ~{format_eta(eta_sec)} remaining{tea_hint}"
                         )
 
                 if total_duration >= 10.0:
@@ -267,6 +269,7 @@ class TranscriptionEngine:
         overwrite: Optional[bool] = None,
         overwrite_prompt_cb: Optional[Callable[[str, Path], Optional[bool]]] = None,
         cookie_permission_cb: Optional[Callable[[str], bool]] = None,
+        meta_cb: Optional[Callable[[MediaMetadata], None]] = None,
     ) -> tuple[str, str, str, List[TranscriptSegment], str, str]:
         """
         Executes the full online link pipeline with 100% scratch file hygiene:
@@ -329,6 +332,11 @@ class TranscriptionEngine:
                 has_audio=True,
                 format_name=clip_info.platform,
             )
+            if meta_cb:
+                try:
+                    meta_cb(probed_meta)
+                except Exception:
+                    pass
 
             # 3. Load Whisper model & transcribe
             whisper_model = self.get_model(model_name, status_cb)
@@ -339,7 +347,8 @@ class TranscriptionEngine:
             total_duration = probed_meta.duration_seconds if probed_meta.duration_seconds > 0 else 1.0
             hist_rtf = self.config_manager.get_model_rtf(model_name)
             initial_eta = max(1, round(total_duration * hist_rtf))
-            status_cb(f"Transcribing audio: 0% · ~{format_eta(initial_eta)} remaining...")
+            tea_hint = " ☕ (time for tea!)" if initial_eta >= 120 else ""
+            status_cb(f"Transcribing audio: 0% · ~{format_eta(initial_eta)} remaining{tea_hint}...")
 
             t_start = time.monotonic()
             with prevent_app_nap():
@@ -373,10 +382,11 @@ class TranscriptionEngine:
                         rtf_eff = (1.0 - weight) * hist_rtf + weight * rtf_live
                         rem_audio = max(0.0, total_duration - segment.end)
                         eta_sec = max(1, round(rem_audio * rtf_eff))
+                        tea_hint = " ☕ (time for tea!)" if eta_sec >= 120 else ""
                         progress_cb(progress)
                         status_cb(
                             f"Transcribing: [{format_timestamp(segment.end)} / {format_timestamp(total_duration)}] "
-                            f"({int(progress * 100)}%) · ~{format_eta(eta_sec)} remaining"
+                            f"({int(progress * 100)}%) · ~{format_eta(eta_sec)} remaining{tea_hint}"
                         )
 
                 if total_duration >= 10.0:

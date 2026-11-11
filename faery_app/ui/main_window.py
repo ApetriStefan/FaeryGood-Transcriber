@@ -919,6 +919,7 @@ class FaeryTranscriberApp(ctk.CTk):
                     overwrite=overwrite,
                     overwrite_prompt_cb=self._threadsafe_prompt_overwrite,
                     cookie_permission_cb=self._threadsafe_prompt_cookie_permission,
+                    meta_cb=self._async_update_metadata,
                 )
             )
             elapsed_sec = int(time.time() - start_time)
@@ -945,6 +946,17 @@ class FaeryTranscriberApp(ctk.CTk):
     def _async_update_status(self, text: str) -> None:
         """Thread-safe UI status update."""
         self.after(0, lambda: self.status_label.configure(text=text))
+
+    def _async_update_metadata(self, meta: MediaMetadata) -> None:
+        """Thread-safe UI callback to update media metadata cards when an online clip is probed."""
+        def update():
+            try:
+                if self.winfo_exists():
+                    self.current_media_meta = meta
+                    self._update_file_metadata_display(meta)
+            except Exception:
+                pass
+        self.after(0, update)
 
     def _async_update_progress(self, progress_float: float) -> None:
         """Switches progress bar to determinate and advances progress."""

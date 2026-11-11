@@ -499,6 +499,11 @@ class TranscribeStudioView:
         rtf = app.config_manager.get_model_rtf(model_name)
         est_sec = max(2, round(meta.duration_seconds * rtf))
         tea_hint = " ☕ (time for tea!)" if est_sec >= 120 else ""
+        if getattr(app, "selected_url", None) and meta.path:
+            clean_name = meta.path.stem
+            if len(clean_name) > 42:
+                clean_name = clean_name[:39] + "..."
+            app.file_name_label.configure(text=f"🌐 {meta.format_name} Clip: {clean_name}")
         app.file_meta_label.configure(
             text=f"⏱ Duration: {dur_str}  |  📦 Size: {size_str}  |  🪄 Est. time: ~{format_eta(est_sec)}{tea_hint}"
         )
