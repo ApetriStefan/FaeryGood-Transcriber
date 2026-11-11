@@ -17,11 +17,13 @@ os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 os.environ["KMP_BLOCKTIME"] = "0"
 os.environ["OMP_WAIT_POLICY"] = "PASSIVE"
 
-# Windows High-DPI awareness initialization
+# Windows High-DPI awareness and Taskbar AppUserModelID initialization
 if sys.platform == "win32":
     try:
         import ctypes
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        # Ensure Windows Taskbar displays the custom Faery icon instead of python.exe
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("faerygood.transcriber.studio.1.0")
     except Exception:
         pass
 

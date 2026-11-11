@@ -82,22 +82,48 @@ class BrandAssets:
             pass
 
     def apply_window_icon(self, window: tk.Misc) -> None:
-        """Applies the Faery Good watercolor fairy icon to the window titlebar and macOS Dock."""
+        """Applies the Faery Good watercolor fairy icon to the window titlebar, taskbar, and macOS Dock."""
         try:
+            # Set explicit AppUserModelID on Windows so the Taskbar groups under Faery Good Transcriber
+            if sys.platform == "win32":
+                try:
+                    import ctypes
+                    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("faerygood.transcriber.studio.1.0")
+                except Exception:
+                    pass
+
             ico_path = self.assets_dir / "faery_icon.ico"
             png_path = self.assets_dir / "faery_icon.png"
-            ico_applied = False
+            icns_path = self.assets_dir / "faery_icon.icns"
+
+            # Apply iconphoto (for high-DPI taskbars, Linux desktops, and cross-platform Tkinter)
+            if png_path.exists():
+                try:
+                    from PIL import Image, ImageTk
+                    pil_img = Image.open(png_path).resize((256, 256), Image.Resampling.LANCZOS)
+                    tk_icon = ImageTk.PhotoImage(pil_img, master=window)
+                    setattr(window, "_faery_tk_icon", tk_icon)
+                    window.iconphoto(True, tk_icon)
+                except Exception:
+                    pass
+
+            # Apply native Windows ICO to titlebar
             if sys.platform == "win32" and ico_path.exists():
                 try:
                     window.iconbitmap(default=str(ico_path))
-                    ico_applied = True
                 except Exception:
-                    ico_applied = False
-            if not ico_applied and png_path.exists():
-                from PIL import Image, ImageTk
-                pil_img = Image.open(png_path).resize((256, 256), Image.Resampling.LANCZOS)
-                tk_icon = ImageTk.PhotoImage(pil_img, master=window)
-                setattr(window, "_faery_tk_icon", tk_icon)
-                window.iconphoto(True, tk_icon)
+                    pass
+
+            # Apply native macOS Dock icon
+            if sys.platform == "darwin":
+                try:
+                    from AppKit import NSApplication, NSImage
+                    ns_app = NSApplication.sharedApplication()
+                    target_icon = str(icns_path if icns_path.exists() else png_path)
+                    ns_img = NSImage.alloc().initByReferencingFile_(target_icon)
+                    if ns_img:
+                        ns_app.setApplicationIconImage_(ns_img)
+                except Exception:
+                    pass
         except Exception:
             pass
