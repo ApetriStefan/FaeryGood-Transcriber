@@ -35,6 +35,8 @@ A delightful, 100% private, on-device desktop transcription studio and historica
 * **📻 Ambient Faery Radio (104.9 The Grift FM):** Toggle on the radio switch (`⌘R` / `Ctrl+R`) to summon a retro-modern ambient music player docked gracefully at the bottom of the screen. Features 9 original apothecary tracks, GTA-style DJ station bumpers, high-probability satirical legal disclaimers, embedded album artwork, click-to-seek timeline controls, and full keyboard media navigation. Completely disappears when toggled off to keep your workspace 100% clean.
 * **🔐 Built-in "Social Login" Cookie Bridge:** Safely transcribe login-walled Instagram Reels or Facebook videos using your existing browser cookies (Safari, Chrome, Firefox, Edge, Brave) without ever sharing your password.
 * **🔄 Automatic Weekly Background Updates:** When running from a git clone, the app automatically checks for and pulls updates from GitHub every 7 days upon launch, without ever interrupting your workflow.
+* **🪄 Self-Calibrating Task ETA & Dynamic Estimate Display:** Upfront estimated time is displayed immediately when media is selected or recorded, accompanied by a whimsical `☕ (time for tea!)` indicator whenever jobs are estimated at 2 minutes or longer. Switching models dynamically recalculates the estimate. During transcription, a live blended estimator smoothly transitions from historical Real-Time Factor (RTF) to live measured throughput, continuously learning machine performance using an Exponential Moving Average (EMA) saved to settings.
+* **🛡️ Silent Rotating Diagnostic & Crash Logger:** Built-in zero-noise telemetry running quietly in the background via rotating logs (`~/.faery_transcriber_crash.log`, 512KB cap), capturing standard library `faulthandler` thread dumps and uncaught background thread exceptions. If troubleshooting support is ever needed, a single click in **Help → 📋 Copy Diagnostic Log for Stef** copies complete system diagnostics and crash tracebacks directly to the clipboard without exposing private media or transcripts.
 * **🌸 Bespoke Faery Good Aesthetics:** Custom-tailored to [FaeryGood.com](https://faerygood.com/) with watercolor fairy icons, whimsical butterfly accents, soft lavender backgrounds, and apothecary cream cards.
 
 ---
@@ -226,6 +228,10 @@ Faery Good Transcriber is engineered to be self-contained, robust, and completel
    The application is organized into a clean, modular Python package (`faery_app/`) with cleanly decoupled subsystems (`config`, `lifecycle`, `models`, `media`, `transcription`, `radio`, `history`, `utils`, `ui`), fronted by `app.py` as a lightweight backwards-compatible facade and entry point.
 7. **Embedded SQLite Database & Instant FTS5 Search:**  
    Past transcript sessions are stored in an embedded SQLite database (`~/.faery_transcriber.db`) operating under Write-Ahead Logging (`WAL` mode) with `PRAGMA synchronous=NORMAL` and busy timeout handling for crash safety. Spoken transcripts are indexed in an SQLite FTS5 virtual table with `unicode61` tokenization, enabling sub-millisecond full-text queries, BM25-based relevance ranking, and contextual snippet highlighting. Legacy JSON libraries (`~/.faery_transcriptions_history.json`) are seamlessly auto-migrated on startup with automatic `.bak` backup creation.
+8. **Self-Calibrating Task ETA & Blended Estimator (`TranscriptionEngine` & `ConfigManager`):**  
+   Before processing begins, the engine evaluates duration against persisted historical Real-Time Factor (`model_rtf`). As transcription progresses, a live blended estimator smoothly transitions from historical performance to real-time throughput over the first 25% of audio duration. Upon task completion, an Exponential Moving Average ($\text{new\_rtf} = \text{round}(0.7 \times \text{current} + 0.3 \times \text{observed}, 3)$) updates persisted calibration, adapting to machine performance and thermal state over time.
+9. **Silent Rotating Diagnostic & Crash Logger (`crash_logger.py`):**  
+   Telemetry runs silently without polluting the user interface. Employs a 512KB rotating log handler (`~/.faery_transcriber_crash.log`), links into `sys.excepthook` and `threading.excepthook`, and activates Python's C-level `faulthandler` with `all_threads=True` to catch fatal interpreter terminations. The Help menu's "Copy Diagnostic Log" action extracts this data (or synthesizes a clean hardware and platform summary) to the system clipboard for effortless, zero-leak troubleshooting.
 
 For comprehensive developer documentation and architectural specifications, explore the repository's **Core-Knowledge** base:
 * 🧭 **[Core-Knowledge Index](knowledge/core_knowledge/index.md)** — Architectural routing table and folder contracts.
@@ -245,7 +251,7 @@ The repository includes an extensive automated test suite covering all critical 
 # Activate your virtual environment, then run:
 python test_app.py
 ```
-*(All 41 automated unit and integration tests execute in under 6 seconds).*
+*(All 59 automated unit and integration tests execute in under 6 seconds).*
 
 ### Building Standalone macOS App & DMG
 If you want to create a native macOS drag-and-drop installer:

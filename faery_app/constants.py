@@ -48,6 +48,8 @@ HISTORY_FILE_NAME = ".faery_transcriptions_history.json"
 HISTORY_PATH = Path.home() / HISTORY_FILE_NAME
 DB_FILE_NAME = ".faery_transcriber.db"
 DB_PATH = Path.home() / DB_FILE_NAME
+CRASH_LOG_FILE_NAME = ".faery_transcriber_crash.log"
+CRASH_LOG_PATH = Path.home() / ".faery_transcriber_crash.log"
 
 DEFAULT_OUTPUT_DIR = Path.home() / "Documents" / "Transcriptions"
 

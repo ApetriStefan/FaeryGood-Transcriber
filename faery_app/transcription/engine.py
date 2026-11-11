@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, List, Optional, Tuple
 
@@ -18,11 +19,12 @@ if TYPE_CHECKING:
 
 WhisperModel = None
 
+from faery_app.config.config_manager import ConfigManager
 from faery_app.constants import MIN_DISK_SPACE_MB, DEFAULT_COOKIE_BROWSER
 from faery_app.lifecycle.scratch import ScratchLifecycleManager
 from faery_app.media.processor import MediaProcessor
 from faery_app.media.online_fetcher import OnlineMediaFetcher
-from faery_app.models.formatter import TranscriptFormatter
+from faery_app.models.formatter import TranscriptFormatter, format_eta, format_timestamp
 from faery_app.models.metadata import MediaMetadata, TranscriptSegment, OnlineClipInfo
 from faery_app.utils.system import check_free_disk_space
 from faery_app.utils.macos import prevent_app_nap
@@ -35,10 +37,14 @@ class TranscriptionEngine:
     scratch files remain on disk.
     """
 
-    def __init__(self):
+    def __init__(self, config_manager: Optional[ConfigManager] = None):
         self._cached_model: Optional[WhisperModel] = None
         self._cached_model_name: Optional[str] = None
         self._lock = threading.Lock()
+        if config_manager is None:
+            self.config_manager = ConfigManager()
+        else:
+            self.config_manager = config_manager
 
     @staticmethod
     def get_optimal_cpu_threads() -> int:
@@ -172,8 +178,12 @@ class TranscriptionEngine:
             if cancel_event.is_set():
                 raise InterruptedError("Transcription cancelled.")
 
-            status_cb("Transcribing audio (this usually takes 1–2 minutes)...")
+            total_duration = media_meta.duration_seconds if media_meta.duration_seconds > 0 else 1.0
+            hist_rtf = self.config_manager.get_model_rtf(model_name)
+            initial_eta = max(1, round(total_duration * hist_rtf))
+            status_cb(f"Transcribing audio: 0% · ~{format_eta(initial_eta)} remaining...")
 
+            t_start = time.monotonic()
             with prevent_app_nap():
                 segments_gen, info = whisper_model.transcribe(
                     str(scratch_wav),
@@ -182,7 +192,8 @@ class TranscriptionEngine:
                     vad_parameters=dict(min_silence_duration_ms=500),
                 )
 
-                total_duration = media_meta.duration_seconds if media_meta.duration_seconds > 0 else (info.duration or 1.0)
+                if media_meta.duration_seconds <= 0 and info and getattr(info, "duration", None):
+                    total_duration = info.duration
 
                 for segment in segments_gen:
                     if cancel_event.is_set():
@@ -197,12 +208,22 @@ class TranscriptionEngine:
                     segment_cb(seg_obj)
 
                     if total_duration > 0:
-                        pct = min(0.99, max(0.01, segment.end / total_duration))
-                        progress_cb(pct)
+                        progress = min(0.99, max(0.01, segment.end / total_duration))
+                        elapsed = time.monotonic() - t_start
+                        rtf_live = elapsed / max(0.1, segment.end)
+                        weight = min(1.0, progress / 0.25)
+                        rtf_eff = (1.0 - weight) * hist_rtf + weight * rtf_live
+                        rem_audio = max(0.0, total_duration - segment.end)
+                        eta_sec = max(1, round(rem_audio * rtf_eff))
+                        progress_cb(progress)
                         status_cb(
-                            f"Transcribing: [{seg_obj.formatted_timestamp} / {media_meta.formatted_duration}] "
-                            f"({int(pct * 100)}%)..."
+                            f"Transcribing: [{format_timestamp(segment.end)} / {format_timestamp(total_duration)}] "
+                            f"({int(progress * 100)}%) · ~{format_eta(eta_sec)} remaining"
                         )
+
+                if total_duration >= 10.0:
+                    observed_rtf = (time.monotonic() - t_start) / total_duration
+                    self.config_manager.update_model_rtf(model_name, observed_rtf)
 
         if cancel_event.is_set():
             raise InterruptedError("Transcription cancelled.")
@@ -315,8 +336,12 @@ class TranscriptionEngine:
             if cancel_event.is_set():
                 raise InterruptedError("Transcription cancelled.")
 
-            status_cb(f"🎙️ Transcribing '{clip_info.sanitized_title}'...")
+            total_duration = probed_meta.duration_seconds if probed_meta.duration_seconds > 0 else 1.0
+            hist_rtf = self.config_manager.get_model_rtf(model_name)
+            initial_eta = max(1, round(total_duration * hist_rtf))
+            status_cb(f"Transcribing audio: 0% · ~{format_eta(initial_eta)} remaining...")
 
+            t_start = time.monotonic()
             with prevent_app_nap():
                 segments_gen, info = whisper_model.transcribe(
                     str(scratch_wav),
@@ -325,7 +350,8 @@ class TranscriptionEngine:
                     vad_parameters=dict(min_silence_duration_ms=500),
                 )
 
-                total_duration = probed_meta.duration_seconds if probed_meta.duration_seconds > 0 else (info.duration or 1.0)
+                if probed_meta.duration_seconds <= 0 and info and getattr(info, "duration", None):
+                    total_duration = info.duration
 
                 for segment in segments_gen:
                     if cancel_event.is_set():
@@ -340,12 +366,22 @@ class TranscriptionEngine:
                     segment_cb(seg_obj)
 
                     if total_duration > 0:
-                        pct = min(0.99, max(0.01, segment.end / total_duration))
-                        progress_cb(pct)
+                        progress = min(0.99, max(0.01, segment.end / total_duration))
+                        elapsed = time.monotonic() - t_start
+                        rtf_live = elapsed / max(0.1, segment.end)
+                        weight = min(1.0, progress / 0.25)
+                        rtf_eff = (1.0 - weight) * hist_rtf + weight * rtf_live
+                        rem_audio = max(0.0, total_duration - segment.end)
+                        eta_sec = max(1, round(rem_audio * rtf_eff))
+                        progress_cb(progress)
                         status_cb(
-                            f"Transcribing: [{seg_obj.formatted_timestamp} / {probed_meta.formatted_duration}] "
-                            f"({int(pct * 100)}%)..."
+                            f"Transcribing: [{format_timestamp(segment.end)} / {format_timestamp(total_duration)}] "
+                            f"({int(progress * 100)}%) · ~{format_eta(eta_sec)} remaining"
                         )
+
+                if total_duration >= 10.0:
+                    observed_rtf = (time.monotonic() - t_start) / total_duration
+                    self.config_manager.update_model_rtf(model_name, observed_rtf)
 
         if cancel_event.is_set() or clip_info is None or probed_meta is None:
             raise InterruptedError("Transcription cancelled.")

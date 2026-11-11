@@ -40,6 +40,9 @@ Choose whichever is easiest for you:
 ### 3. Click "✨ Generate Transcript"
 Press **`✨ Generate Transcript`** (or hit `Ctrl+Enter` / `⌘Enter`).
 
+> 🪄 **Automatic Upfront Time & "Cup of Tea" Indicator:**  
+> The moment you select a file or stop a microphone recording, the app shows an upfront estimate of how long transcription will take (e.g. `🪄 Est. time: ~4–5 mins ☕ (time for tea!)`). The app automatically learns your computer's speed and calibrates itself over time. If a job is estimated at 2 minutes or longer, it delightfully reminds you it's `☕ (time for tea!)` so you can take a cozy break. During transcription, you'll also see a live countdown showing remaining time!
+
 Watch your words stream onto the screen in real time! When finished, a gentle chime sounds, and your transcript is automatically saved.
 
 ---
@@ -118,6 +121,7 @@ Your voice and words belong entirely to you:
 * **"Can I change the appearance?"** Yes! Click the theme dropdown in the top-right corner to switch between **Light**, **Dark**, or **System** mode whenever you like.
 * **"How do I clear the text and start a new clip?"** Press `Ctrl+N` / `⌘N` (or click **`New`** in the menu).
 * **"What languages are supported?"** Faery Good Transcriber is specifically tuned and optimized for **English** speech (`small.en` and `base.en` models) to deliver the highest accuracy and fastest local performance on your computer.
+* **"Need a hand or ran into a glitch?"** Stef has you covered! Simply click **Help → 📋 Copy Diagnostic Log for Stef** in the top menu bar. This copies a private, zero-jargon diagnostic log directly to your clipboard so you can paste and send it right to Stef—without ever sharing your private recordings or spoken words.
 
 ---
 

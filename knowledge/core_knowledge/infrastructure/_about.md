@@ -61,12 +61,12 @@ This directory documents the deployment, packaging, execution environments, self
 ## 4. Test Suite & Quality Verification
 
 * **Framework:** Standard library `unittest` (`test_app.py`).
-* **Status:** 54 passing unit and integration tests (0 failures, 0 errors).
+* **Status:** 59 passing unit and integration tests (0 failures, 0 errors).
 * **Execution:**
   ```bash
   python -m unittest test_app.py
   ```
-* **Test Matrix:** 54 comprehensive unit and integration tests covering:
+* **Test Matrix:** 59 comprehensive unit and integration tests covering:
   - Formatter logic (paragraphs, timecodes, markdown).
   - Scratch lifecycle hygiene, isolated directories, and file lock backoff.
   - Auto-update cadence, bundle detection, and offline handling.
@@ -77,3 +77,4 @@ This directory documents the deployment, packaging, execution environments, self
   - Public facade symbol exports (ensuring `app.py` exposes all classes and helpers identically to `faery_app`).
   - macOS Application Integration (`TestMacOSAppIntegration`): platform guard on non-darwin OS, `.app` bundle hierarchy generation, permission fallback to `~/Applications`, frozen bundle replication, and directory writability validation.
   - Performance & Hardware Optimization Suite (`TestPerformanceOptimizations`): lazy WhisperModel loading, zero-subprocess WAV fast probing, mono 16kHz PCM conversion bypass, cached binary paths, batched SQLite synchronization, single-record in-place content updates, zero-disk-I/O search, demand-driven 0 Hz idle radio polling, physical CPU core thread allocation heuristics, macOS `prevent_app_nap` lifecycle management via `caffeinate`, and Intel OpenMP passive wait environment variables (`KMP_BLOCKTIME=0`, `OMP_WAIT_POLICY=PASSIVE`).
+  - Diagnostic Logging & Task ETA Suite (`TestCrashLoggerAndTaskETA`): `format_eta` boundary transitions (<15s, <60s, <3600s, $\ge$3600s), `ConfigManager` `model_rtf` getters, [0.05, 3.0] boundary clamping, Exponential Moving Average (EMA) calibration persistence, silent rotating crash logging (`~/.faery_transcriber_crash.log`), stdlib `faulthandler` integration, system diagnostic fallback synthesis via `get_diagnostic_log_content`, and `TranscriptionEngine` live blended RTF calculation and post-task EMA calibration.

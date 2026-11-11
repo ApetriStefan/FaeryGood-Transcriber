@@ -134,6 +134,11 @@ class MenuBuilder:
         )
         help_menu.add_separator()
         help_menu.add_command(
+            label="📋 Copy Diagnostic Log for Stef",
+            command=app.copy_diagnostic_log,
+        )
+        help_menu.add_separator()
+        help_menu.add_command(
             label=f"About {APP_NAME}",
             command=app._show_about_dialog,
         )

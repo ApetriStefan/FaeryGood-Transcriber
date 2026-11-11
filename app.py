@@ -32,6 +32,13 @@ from faery_app.constants import *
 from faery_app.config.config_manager import ConfigManager
 from faery_app.lifecycle.scratch import ScratchLifecycleManager
 from faery_app.lifecycle.updater import AutoUpdater
+from faery_app.lifecycle.crash_logger import (
+    init_crash_logging,
+    shutdown_crash_logging,
+    log_exception,
+    get_diagnostic_log_content,
+    CRASH_LOG_PATH,
+)
 
 # Re-export Models & Formatting
 from faery_app.models.metadata import (
@@ -40,7 +47,11 @@ from faery_app.models.metadata import (
     OnlineClipInfo,
     format_seconds_mm_ss,
 )
-from faery_app.models.formatter import TranscriptFormatter
+from faery_app.models.formatter import (
+    TranscriptFormatter,
+    format_eta,
+    format_timestamp,
+)
 
 # Re-export Media & Extraction
 from faery_app.media.processor import MediaProcessor

@@ -36,11 +36,11 @@ flowchart TD
     end
 
     subgraph CoreServices ["faery_app Core Subsystems"]
-        Config["faery_app.config\n(ConfigManager)"]
-        Lifecycle["faery_app.lifecycle\n(ScratchLifecycleManager & AutoUpdater)"]
+        Config["faery_app.config\n(ConfigManager & RTF Calibration)"]
+        Lifecycle["faery_app.lifecycle\n(ScratchLifecycleManager, AutoUpdater & CrashLogger)"]
         Media["faery_app.media\n(MediaProcessor, OnlineMediaFetcher, MicrophoneRecorder)"]
-        Transcription["faery_app.transcription\n(TranscriptionEngine)"]
-        Models["faery_app.models\n(Metadata & TranscriptFormatter)"]
+        Transcription["faery_app.transcription\n(TranscriptionEngine & Task ETA)"]
+        Models["faery_app.models\n(Metadata, TranscriptFormatter & format_eta)"]
         Radio["faery_app.radio\n(RadioStationController & Art Extractor)"]
         History["faery_app.history\n(HistoryManager & HistoryRecord)"]
         Utils["faery_app.utils\n(System & macOS Integrations)"]
@@ -93,18 +93,19 @@ The codebase is organized into domain-specific packages under `faery_app/`:
 faery_app/
 ├── __init__.py                 # Package root & public exports
 ├── __main__.py                 # Standalone execution entry (python -m faery_app)
-├── constants.py                # Global constants, color themes, fonts, playlists
-├── config/                     # Configuration persistence
+├── constants.py                # Global constants, color themes, fonts, playlists, paths
+├── config/                     # Configuration persistence & calibration
 │   ├── __init__.py
-│   └── config_manager.py       # ConfigManager (config.json)
-├── lifecycle/                  # Process & storage hygiene
+│   └── config_manager.py       # ConfigManager (config.json & model_rtf EMA)
+├── lifecycle/                  # Process & storage hygiene, crash telemetry
 │   ├── __init__.py
 │   ├── scratch.py              # ScratchLifecycleManager
-│   └── updater.py              # AutoUpdater (7-day git sync)
+│   ├── updater.py              # AutoUpdater (7-day git sync)
+│   └── crash_logger.py         # Silent rotating diagnostic & crash logger
 ├── models/                     # Domain dataclasses & text formatters
 │   ├── __init__.py
 │   ├── metadata.py             # MediaMetadata, TranscriptSegment, OnlineClipInfo
-│   └── formatter.py            # TranscriptFormatter (paragraphs, timestamped transcripts, markdown)
+│   └── formatter.py            # TranscriptFormatter & format_eta countdowns
 ├── media/                      # Audio extraction, microphone recording & network fetching
 │   ├── __init__.py
 │   ├── processor.py            # MediaProcessor (FFmpeg 16kHz mono conversion)
@@ -155,26 +156,38 @@ faery_app/
 ### 2.2 Configuration Management (`faery_app.config`)
 - **Primary Symbol:** `ConfigManager` in `faery_app/config/config_manager.py`.
 - **Responsibilities:**
-  - Loads and persists user preferences in `config.json` (window size, output format, selected speech model, pause threshold, social login browser, and timestamp of the last update check).
+  - Loads and persists user preferences in `~/.faery_transcriber_config.json` (window size, output format, selected speech model, pause threshold, social login browser, timestamp of the last update check, ambient radio settings, and `model_rtf` mapping).
+  - **Hardware RTF Calibration Persistence (`model_rtf`):** Persists historical Real-Time Factor (RTF) benchmarks for each transcription model (`small.en`: default 0.35, `base.en`: default 0.15), clamped within the safety interval $[0.05, 3.0]$.
+  - **Exponential Moving Average Calibration (`update_model_rtf`):** Dynamically updates persisted model RTFs upon completion of audio transcriptions ($\ge 10.0\text{s}$) using the formula:
+    $$\text{new\_rtf} = \text{round}(0.7 \times \text{current\_rtf} + 0.3 \times \text{observed\_rtf}, 3)$$
+    ensuring duration estimates continuously adapt to the specific machine's thermal and CPU processing capabilities without abrupt volatility.
   - Handles missing or corrupted configuration files safely by automatically falling back to sensible defaults.
 
 ### 2.3 Lifecycle Management & Sandbox Hygiene (`faery_app.lifecycle`)
 - **Primary Symbols:**
   - `ScratchLifecycleManager` in `faery_app/lifecycle/scratch.py`
   - `AutoUpdater` in `faery_app/lifecycle/updater.py`
+  - Crash logger utilities (`init_crash_logging`, `log_exception`, `get_diagnostic_log_content`) in `faery_app/lifecycle/crash_logger.py`
 - **Responsibilities:**
   - **Scratch Directory Sandbox:** Provides `safe_scratch_directory()` context manager and `create_persistent_scratch_dir()` ensuring temporary files and microphone captures are quarantined in isolated folders (`faery_transcribe_*`, `faery_mic_*`).
   - **Failsafe Purge Hooks:** Registers handlers across `atexit`, `signal.SIGINT`, `signal.SIGTERM`, and GUI close events to eradicate active scratch data before process termination.
   - **Windows Anti-Lock Retry:** Implements exponential backoff when deleting directories on Windows to overcome temporary file locks held by antivirus scanners or system indexers.
   - **Startup Orphan Sweeper:** On application launch, silently purges abandoned `faery_transcribe_*` and `faery_mic_*` folders and partial Hugging Face `*.incomplete` cache files left by previous system crashes or forced restarts.
   - **Automated Repository & Extractor Updates:** Non-blocking 7-day interval check for repository updates via git, followed by background upgrades of `yt-dlp[default]`, `yt-dlp-ejs`, and `deno`. Features standalone bundle immunity (`sys.frozen` check) to skip Git operations in packaged binaries, DNS reachability tests, and git stash/pull safety.
+  - **Silent Rotating Diagnostic & Crash Logger (`crash_logger.py`):**
+    - **Zero-Noise Initialization (`init_crash_logging`):** Idempotent bootstrap configuring a dedicated `RotatingFileHandler` writing to `~/.faery_transcriber_crash.log` capped at 512 KB with 1 historical backup.
+    - **Native Thread Dump Interception (`faulthandler`):** Arms Python standard library `faulthandler` pointing at the crash log file handle with `all_threads=True` to record tracebacks for hard C-level interpreter crashes, segmentation faults, and fatal abort signals.
+    - **Unhandled Exception Interception:** Hooks into `sys.excepthook` for uncaught main thread exceptions and `threading.excepthook` for background worker crashes, formatting full tracebacks and flushing handlers synchronously to disk.
+    - **Diagnostic Log Extraction (`get_diagnostic_log_content`):** Extracts the tail (up to 100 lines) of `~/.faery_transcriber_crash.log` for clipboard export. If the log is clean or absent, dynamically synthesizes a system diagnostic summary including OS release/version, CPU architecture, Python runtime path/version, and available system RAM via `psutil`.
+    - **Contextual Exception Logging (`log_exception`):** Formats and synchronously flushes structured error records with optional context tags.
 
 ### 2.4 Domain Models & Formatting (`faery_app.models`)
 - **Primary Symbols:**
   - `MediaMetadata`, `TranscriptSegment`, `OnlineClipInfo`, `format_seconds_mm_ss` in `faery_app/models/metadata.py`
-  - `TranscriptFormatter` in `faery_app/models/formatter.py`
+  - `TranscriptFormatter`, `format_eta` in `faery_app/models/formatter.py`
 - **Responsibilities:**
   - Strongly typed data structures representing media properties and transcription utterances.
+  - **Task ETA Formatter (`format_eta`):** Translates remaining duration seconds into intuitive human-friendly intervals: `< 15s` as `"a few seconds"`, `< 60s` as `"{s}s"`, `< 3600s` as `"{m} min"` or `"{m}m {s}s"`, and $\ge 3600\text{s}$ as `"{h}h {m}m"`.
   - **Acoustic Pause Detection:** Clusters continuous speech segments into clean, readable paragraphs when inter-word pauses exceed the configured threshold ($\ge 1.0\text{s} - 1.2\text{s}$).
   - **Timestamped Transcripts (`[MM:SS]`):** Generates structured segment timestamps formatted as `[MM:SS]` for show notes, interview review, and video reference logs.
   - **Markdown Generation:** Formats complete transcripts with metadata headers and timestamps for documentation export.
@@ -198,6 +211,10 @@ faery_app/
   - **Intel OpenMP Zero Spin-Wait:** Sets `KMP_BLOCKTIME=0` and `OMP_WAIT_POLICY=PASSIVE` at the module entry level before `ctranslate2` initializes, ensuring OpenMP worker threads yield immediately rather than busy-spinning at 100% CPU between audio chunks.
   - **macOS Sonoma App Nap & Sleep Immunity:** Inference execution loops (`run_transcription` and `run_online_transcription`) are wrapped with the `prevent_app_nap()` context manager, spawning a background `caffeinate -i -w <pid>` process to prevent macOS Sonoma power management from throttling background transcription when the application window is occluded or minimized.
   - Supports English-optimized model selection between `small.en` (recommended, high accuracy) and `base.en` (rapid draft processing).
+  - **Self-Calibrating Task ETA & Countdown Telemetry:**
+    - **Initial ETA Calculation:** Before starting audio inference, queries historical model RTF (`ConfigManager.get_model_rtf(model_name)`) to establish an initial job estimate: $\text{initial\_eta} = \max(1, \text{round}(\text{total\_duration} \times \text{hist\_rtf}))$.
+    - **Blended Live Countdown:** During token generation, calculates instantaneous progress from segment timestamps ($\text{progress} = \min(0.99, \max(0.01, \text{segment.end} / \text{total\_duration}))$) and live observed RTF ($\text{rtf\_live} = \text{elapsed} / \max(0.1, \text{segment.end})$). Smoothly blends historical and live rates over the first 25% of audio playback ($\text{weight} = \min(1.0, \text{progress} / 0.25)$, $\text{rtf\_eff} = (1.0 - \text{weight}) \times \text{hist\_rtf} + \text{weight} \times \text{rtf\_live}$), predicting remaining seconds $\text{eta\_sec} = \max(1, \text{round}((\text{total\_duration} - \text{segment.end}) \times \text{rtf\_eff}))$.
+    - **Automatic Post-Inference Calibration:** For jobs where audio duration $\ge 10.0\text{s}$, computes overall observed RTF ($\text{elapsed} / \text{total\_duration}$) and updates persisted model calibration in `ConfigManager` via Exponential Moving Average (EMA).
   - Emits real-time progress callbacks for responsive UI streaming.
 
 ### 2.7 Ambient Radio Subsystem (`faery_app.radio`)
@@ -283,6 +300,9 @@ faery_app/
     - **60ms Coalesced Live Segment Streaming:** Buffers incoming `TranscriptSegment` callbacks and flushes incremental updates to the studio textbox at most once every 60ms (`_flush_pending_segments`), eliminating $O(N^2)$ full-document re-renders during live inference.
     - **$O(1)$ In-Place History Card Highlighting & 80ms Debounced Search:** Selecting a History card updates only the previous and newly selected card widgets in place without destroying or recreating the scrollable widget tree; keystroke search queries are debounced by 80ms (`_on_history_search_changed`).
     - **Demand-Driven Radio Polling (0 Hz Idle):** The 4 Hz radio UI tick loop (`_schedule_radio_poll`) runs strictly while the Ambient Radio is enabled and cancels its timer completely when toggled off.
+    - **Upfront Task ETA & Tea Break Indicator:** On media selection or microphone capture, `TranscribeStudioView._update_file_metadata_display` computes estimated task duration using the active model's calibrated RTF. If estimated time $\ge 120\text{s}$ (2 minutes), appends a whimsical `☕ (time for tea!)` hint to the metadata display (`🪄 Est. time: ~{format_eta(est_sec)}{tea_hint}`).
+    - **Dynamic Model-Switching Recalculation:** When switching models via the dropdown, `_on_model_changed` triggers immediate recalculation of the selected media's estimate using the newly selected model's RTF.
+    - **Diagnostic Log Clipboard Action:** Provides a Help menu option to copy diagnostic system information and crash logs (`get_diagnostic_log_content`) to the system clipboard, allowing the end user to easily share diagnostic telemetry with the lead developer when requesting technical support.
   - Bottom-docked collapsible ambient radio player.
   - Keyboard shortcut dispatcher (`⌘Return`/`Ctrl+Enter`, `⌘L`/`Ctrl+L`, `⌘O`/`Ctrl+O`, `⌘D`/`Ctrl+D`, `⌘R`/`Ctrl+R`).
 

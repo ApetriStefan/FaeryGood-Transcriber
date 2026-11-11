@@ -42,6 +42,11 @@ from app import (
     _create_macos_app_bundle,
     APP_NAME,
     APP_VERSION,
+    format_eta,
+    init_crash_logging,
+    log_exception,
+    get_diagnostic_log_content,
+    CRASH_LOG_PATH,
 )
 
 
@@ -1566,6 +1571,204 @@ class TestPerformanceOptimizations(unittest.TestCase):
         finally:
             app.radio_controller.stop()
             app.destroy()
+
+
+class TestCrashLoggerAndTaskETA(unittest.TestCase):
+    """
+    Test suite for:
+    1. format_eta formatting across boundaries.
+    2. ConfigManager model_rtf getter, EMA updater, and persistence.
+    3. Silent Rotating Diagnostic & Crash Logger and get_diagnostic_log_content.
+    4. TranscriptionEngine self-calibrating live RTF countdown and dynamic recalculation.
+    """
+
+    def test_format_eta_boundaries(self):
+        # < 15s boundary
+        self.assertEqual(format_eta(0), "a few seconds")
+        self.assertEqual(format_eta(5), "a few seconds")
+        self.assertEqual(format_eta(14.9), "a few seconds")
+
+        # < 60s boundary
+        self.assertEqual(format_eta(15), "15s")
+        self.assertEqual(format_eta(45), "45s")
+        self.assertEqual(format_eta(59), "59s")
+
+        # < 3600s boundary
+        self.assertEqual(format_eta(60), "1 min")
+        self.assertEqual(format_eta(75), "1m 15s")
+        self.assertEqual(format_eta(120), "2 min")
+        self.assertEqual(format_eta(600), "10 min")
+        self.assertEqual(format_eta(725), "12m 5s")
+
+        # >= 3600s boundary
+        self.assertEqual(format_eta(3600), "1h 0m")
+        self.assertEqual(format_eta(3660), "1h 1m")
+        self.assertEqual(format_eta(7325), "2h 2m")
+
+    def test_config_manager_model_rtf(self):
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = Path(td) / "test_config.json"
+            cfg = ConfigManager(cfg_path)
+
+            # Test defaults
+            self.assertAlmostEqual(cfg.get_model_rtf("small.en"), 0.35)
+            self.assertAlmostEqual(cfg.get_model_rtf("High Accuracy (small.en - Recommended)"), 0.35)
+            self.assertAlmostEqual(cfg.get_model_rtf("base.en"), 0.15)
+            self.assertAlmostEqual(cfg.get_model_rtf("Standard (base.en - Fast)"), 0.15)
+
+            # Test EMA update: 0.7 * 0.35 + 0.3 * 0.15 = 0.245 + 0.045 = 0.29
+            cfg.update_model_rtf("small.en", 0.15)
+            self.assertAlmostEqual(cfg.get_model_rtf("small.en"), 0.29, places=3)
+            self.assertAlmostEqual(cfg.get_model_rtf("High Accuracy (small.en - Recommended)"), 0.29, places=3)
+
+            # Test persistence in new instance
+            cfg2 = ConfigManager(cfg_path)
+            self.assertAlmostEqual(cfg2.get_model_rtf("small.en"), 0.29, places=3)
+
+            # Test clamping to [0.05, 3.0]
+            cfg.update_model_rtf("small.en", 10.0)
+            self.assertLessEqual(cfg.get_model_rtf("small.en"), 3.0)
+
+            cfg.update_model_rtf("small.en", 0.0001)
+            self.assertGreaterEqual(cfg.get_model_rtf("small.en"), 0.05)
+
+    def test_crash_logger_and_diagnostics(self):
+        with tempfile.TemporaryDirectory() as td:
+            fake_log_path = Path(td) / "test_crash.log"
+            import faery_app.lifecycle.crash_logger as cl
+
+            try:
+                with patch.object(cl, "CRASH_LOG_PATH", fake_log_path):
+                    # Reset module initialized state for clean test run
+                    cl._initialized = False
+                    cl._logger.handlers.clear()
+
+                    cl.init_crash_logging()
+                    self.assertTrue(cl._initialized)
+
+                    # Log string message
+                    cl.log_exception("Manual test log failure", context="TranscribeTest")
+                    self.assertTrue(fake_log_path.exists())
+                    content = cl.get_diagnostic_log_content()
+                    self.assertIn("Manual test log failure", content)
+                    self.assertIn("[TranscribeTest]", content)
+
+                    # Log exception instance
+                    try:
+                        raise ValueError("Simulated invalid parameter exception")
+                    except ValueError as exc:
+                        cl.log_exception(exc, context="ExceptionTest")
+
+                    content2 = cl.get_diagnostic_log_content()
+                    self.assertIn("Simulated invalid parameter exception", content2)
+                    self.assertIn("ValueError", content2)
+
+                # Test fallback diagnostic summary when log file is missing
+                missing_log = Path(td) / "does_not_exist.log"
+                with patch.object(cl, "CRASH_LOG_PATH", missing_log):
+                    summary = cl.get_diagnostic_log_content()
+                    self.assertIn("Faery Transcriber Diagnostic Summary", summary)
+                    self.assertIn("Python Version:", summary)
+                    self.assertIn("OS:", summary)
+            finally:
+                cl.shutdown_crash_logging()
+
+    def test_transcription_engine_rtf_updating(self):
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = Path(td) / "engine_cfg.json"
+            cfg = ConfigManager(cfg_path)
+            engine = TranscriptionEngine(config_manager=cfg)
+
+            mock_meta = MediaMetadata(
+                path=Path(td) / "sample_audio.mp4",
+                file_size_bytes=2048,
+                duration_seconds=30.0,
+                has_audio=True,
+                format_name="mp4",
+            )
+
+            class MockSegment:
+                def __init__(self, start, end, text):
+                    self.start = start
+                    self.end = end
+                    self.text = text
+
+            mock_segments = [
+                MockSegment(0.0, 15.0, "First segment"),
+                MockSegment(15.0, 30.0, "Second segment"),
+            ]
+            mock_info = MagicMock(duration=30.0)
+            mock_model = MagicMock()
+            mock_model.transcribe.return_value = (iter(mock_segments), mock_info)
+
+            status_messages = []
+            progress_values = []
+
+            with patch.object(engine, "get_model", return_value=mock_model), \
+                 patch("faery_app.media.processor.MediaProcessor.extract_16k_mono_wav"), \
+                 patch("faery_app.utils.system.check_free_disk_space", return_value=True):
+
+                cancel_ev = threading.Event()
+                # Simulate 30s audio taking 6.0s wall clock time (observed RTF = 0.20)
+                # Call sequence: t_start = 100.0, loop seg1 = 103.0, loop seg2 = 106.0, complete = 106.0
+                with patch("time.monotonic", side_effect=[100.0, 100.0, 103.0, 106.0, 106.0]):
+                    engine.run_transcription(
+                        media_file=Path(td) / "sample_audio.mp4",
+                        media_meta=mock_meta,
+                        model_name="small.en",
+                        output_dir=Path(td),
+                        cancel_event=cancel_ev,
+                        status_cb=status_messages.append,
+                        progress_cb=progress_values.append,
+                        segment_cb=lambda s: None,
+                        overwrite=True,
+                    )
+
+            # Verify countdown ETA was emitted in status updates
+            self.assertTrue(any("remaining" in msg for msg in status_messages))
+            # Verify RTF updated: 0.7 * 0.35 + 0.3 * (6.0 / 30.0 = 0.20) = 0.305
+            self.assertAlmostEqual(cfg.get_model_rtf("small.en"), 0.305, places=3)
+
+    def test_dynamic_metadata_display_and_model_switching(self):
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = Path(td) / "ui_cfg.json"
+            cfg = ConfigManager(cfg_path)
+            meta = MediaMetadata(
+                path=Path(td) / "tea_session.mp4",
+                file_size_bytes=15 * 1024 * 1024,
+                duration_seconds=600.0,  # 10 minutes -> 600 * 0.35 = 210s >= 120s -> tea hint!
+                has_audio=True,
+                format_name="mp4",
+            )
+
+            app = FaeryTranscriberApp()
+            app.withdraw()
+            try:
+                app.config = cfg
+                app.config_manager = cfg
+                app.selected_file = meta.path
+                app.current_media_meta = meta
+
+                # Test High Accuracy initial metadata display
+                app.model_dropdown.set("High Accuracy (small.en - Recommended)")
+                app._update_file_metadata_display(meta)
+
+                label_text_high = app.file_meta_label.cget("text")
+                self.assertIn("10:00", label_text_high)
+                self.assertIn("Est. time:", label_text_high)
+                self.assertIn("☕ (time for tea!)", label_text_high)
+
+                # Dynamically switch model to Standard (base.en)
+                app.model_dropdown.set("Standard (base.en - Fast)")
+                app._on_model_changed("Standard (base.en - Fast)")
+
+                label_text_base = app.file_meta_label.cget("text")
+                self.assertIn("Est. time:", label_text_base)
+                # Estimated time should have changed dynamically
+                self.assertNotEqual(label_text_high, label_text_base)
+            finally:
+                app.radio_controller.stop()
+                app.destroy()
 
 
 if __name__ == "__main__":

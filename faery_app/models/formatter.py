@@ -4,8 +4,39 @@ Transcript Formatting Utilities for Faery Good Transcriber
 
 from __future__ import annotations
 
-from typing import List, Optional
-from faery_app.models.metadata import TranscriptSegment
+from typing import List, Optional, Union
+from faery_app.models.metadata import TranscriptSegment, format_seconds_mm_ss
+
+
+def format_eta(seconds: Union[int, float]) -> str:
+    """
+    Formats estimated remaining seconds into human-friendly countdown copy:
+    - < 15: "a few seconds"
+    - < 60: "{s}s"
+    - < 3600: "{m} min" (if s == 0) or "{m}m {s}s"
+    - >= 3600: "{h}h {m}m"
+    """
+    sec = float(seconds)
+    if sec < 15:
+        return "a few seconds"
+    elif sec < 60:
+        return f"{int(sec)}s"
+    elif sec < 3600:
+        m = int(sec) // 60
+        s = int(sec) % 60
+        if s == 0:
+            return f"{m} min"
+        else:
+            return f"{m}m {s}s"
+    else:
+        h = int(sec) // 3600
+        m = (int(sec) % 3600) // 60
+        return f"{h}h {m}m"
+
+
+def format_timestamp(seconds: float) -> str:
+    """Formats timestamp in seconds as MM:SS (or HH:MM:SS if >= 1 hour)."""
+    return format_seconds_mm_ss(seconds)
 
 
 class TranscriptFormatter:

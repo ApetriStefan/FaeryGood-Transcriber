@@ -25,6 +25,8 @@ from faery_app.constants import (
     MODEL_DISPLAY_NAMES,
     COOKIE_BROWSER_OPTIONS,
 )
+from faery_app.models.formatter import format_eta
+from faery_app.models.metadata import MediaMetadata
 from faery_app.ui.components.segmented_button import FaerySegmentedButton
 
 
@@ -484,3 +486,20 @@ class TranscribeStudioView:
             command=app._on_open_folder_clicked,
         )
         app.open_folder_btn.pack(side="left")
+
+    @staticmethod
+    def _update_file_metadata_display(app, meta: MediaMetadata) -> None:
+        """
+        Calculates self-calibrating estimated duration based on active model RTF
+        and updates app.file_meta_label with duration, size, and estimated time.
+        """
+        dur_str = meta.formatted_duration
+        size_str = meta.formatted_size
+        model_name = app.model_dropdown.get()
+        rtf = app.config_manager.get_model_rtf(model_name)
+        est_sec = max(2, round(meta.duration_seconds * rtf))
+        tea_hint = " ☕ (time for tea!)" if est_sec >= 120 else ""
+        app.file_meta_label.configure(
+            text=f"⏱ Duration: {dur_str}  |  📦 Size: {size_str}  |  🪄 Est. time: ~{format_eta(est_sec)}{tea_hint}"
+        )
+

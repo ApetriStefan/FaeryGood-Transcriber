@@ -45,12 +45,17 @@ from faery_app.constants import (
 )
 from faery_app.config.config_manager import ConfigManager
 from faery_app.history.history_manager import HistoryManager, HistoryRecord
+from faery_app.lifecycle.crash_logger import (
+    init_crash_logging,
+    log_exception,
+    get_diagnostic_log_content,
+)
 from faery_app.lifecycle.scratch import ScratchLifecycleManager
 from faery_app.lifecycle.updater import AutoUpdater
 from faery_app.media.online_fetcher import OnlineMediaFetcher
 from faery_app.media.processor import MediaProcessor
 from faery_app.media.recorder import MicrophoneRecorder
-from faery_app.models.formatter import TranscriptFormatter
+from faery_app.models.formatter import TranscriptFormatter, format_eta
 from faery_app.models.metadata import MediaMetadata, TranscriptSegment, format_seconds_mm_ss
 from faery_app.radio.art import extract_embedded_art
 from faery_app.radio.controller import RadioStationController
@@ -132,6 +137,9 @@ class FaeryTranscriberApp(ctk.CTk):
     """
 
     def __init__(self):
+        # Initialize silent rotating diagnostic & crash logger
+        init_crash_logging()
+
         # Initialize fail-safe temporary scratch lifecycle hooks and background orphan sweep
         ScratchLifecycleManager.initialize_lifecycle()
 
@@ -141,8 +149,9 @@ class FaeryTranscriberApp(ctk.CTk):
 
         # Configuration, Brand Assets, and Engine instances
         self.config = ConfigManager()
+        self.config_manager = self.config
         self.history = HistoryManager()
-        self.engine = TranscriptionEngine()
+        self.engine = TranscriptionEngine(config_manager=self.config)
         self.recorder = MicrophoneRecorder()
         self.brand = BrandAssets()
         self.radio_controller = RadioStationController(self.config)
@@ -406,6 +415,18 @@ class FaeryTranscriberApp(ctk.CTk):
     def _setup_shortcuts(self) -> None:
         MenuBuilder.setup_shortcuts(self)
 
+    @property
+    def current_media_meta(self) -> Optional[MediaMetadata]:
+        return self.selected_metadata
+
+    @current_media_meta.setter
+    def current_media_meta(self, val: Optional[MediaMetadata]) -> None:
+        self.selected_metadata = val
+
+    def _update_file_metadata_display(self, meta: MediaMetadata) -> None:
+        """Updates file metadata label with duration, size, and self-calibrating estimated time."""
+        TranscribeStudioView._update_file_metadata_display(self, meta)
+
     # -----------------------------------------------------------------------
     # GUI Event Handlers (Transcribe Tab)
     # -----------------------------------------------------------------------
@@ -415,6 +436,8 @@ class FaeryTranscriberApp(ctk.CTk):
 
     def _on_model_changed(self, choice: str) -> None:
         self.config.model_selection = choice
+        if self.current_media_meta is not None:
+            self._update_file_metadata_display(self.current_media_meta)
 
     def _on_cookie_browser_changed(self, choice: str) -> None:
         self.config.cookie_browser = choice
@@ -561,9 +584,7 @@ class FaeryTranscriberApp(ctk.CTk):
         self.selected_url = None
 
         self.file_name_label.configure(text=f"🎙️ {wav_path.name}")
-        self.file_meta_label.configure(
-            text=f"⏱ Duration: {metadata.formatted_duration}   |   📦 Size: {metadata.formatted_size}   |   🔒 Temp audio cleaned on exit"
-        )
+        self._update_file_metadata_display(metadata)
         mod_key = "⌘Return" if sys.platform == "darwin" else "Ctrl+Enter"
         self.status_label.configure(
             text=f"✨ Microphone recording ready ({metadata.formatted_duration}). Click 'Generate Transcript' or press {mod_key}."
@@ -664,11 +685,7 @@ class FaeryTranscriberApp(ctk.CTk):
             self.config.save()
 
             self.file_name_label.configure(text=f"🎬 {file_path.name}")
-            self.file_meta_label.configure(
-                text=f"⏱ Duration: {metadata.formatted_duration}   |   "
-                     f"📦 Size: {metadata.formatted_size}   |   "
-                     f"🎵 Audio: Sound track detected"
-            )
+            self._update_file_metadata_display(metadata)
             mod_key = "⌘Return" if sys.platform == "darwin" else "Ctrl+Enter"
             self.status_label.configure(
                 text=f"Ready to transcribe '{file_path.name}' ({metadata.formatted_duration}). Click 'Generate Transcript' or press {mod_key}."
@@ -1032,6 +1049,14 @@ class FaeryTranscriberApp(ctk.CTk):
         self.status_label.configure(text="Ready to transcribe.")
 
         err_msg = str(error)
+        first_line = err_msg.strip().split("\n")[0] if err_msg.strip() else "Unknown error"
+        for prefix in ("RuntimeError:", "ValueError:", "IOError:", "OSError:", "Exception:", "Error:"):
+            if first_line.startswith(prefix):
+                first_line = first_line[len(prefix):].strip()
+
+        clean_err = first_line if len(first_line) <= 120 else first_line[:117] + "..."
+        log_exception(clean_err, context="Transcription failed")
+
         lower_msg = err_msg.lower()
         if "disk space" in lower_msg:
             messagebox.showerror(
@@ -1193,6 +1218,22 @@ class FaeryTranscriberApp(ctk.CTk):
                 text_color=FAERY_SECONDARY_TEXT,
             ),
         )
+
+    def copy_diagnostic_log(self) -> None:
+        """Copies diagnostic and crash log content to the system clipboard."""
+        try:
+            content = get_diagnostic_log_content()
+            self.clipboard_clear()
+            self.clipboard_append(content)
+            self.update()
+            self.status_label.configure(text="📋 Diagnostic log copied to clipboard! Paste it to Stef.")
+            messagebox.showinfo(
+                "Diagnostic Log Copied 📋",
+                "Diagnostic log copied to clipboard! Paste it to Stef.",
+            )
+        except Exception as exc:
+            self.status_label.configure(text="Failed to copy diagnostic log.")
+            messagebox.showerror("Clipboard Error", f"Unable to copy diagnostic log: {exc}")
 
     def _on_save_txt_clicked(self) -> None:
         content = self.textbox.get("1.0", "end-1c").strip()
