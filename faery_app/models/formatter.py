@@ -43,6 +43,38 @@ class TranscriptFormatter:
     """Utilities to format raw Whisper segments into clean paragraphs, timecodes, or raw text."""
 
     @staticmethod
+    def _heal_paragraph(para_text: str) -> str:
+        """
+        Applies sentence and paragraph boundary healing to a closed paragraph:
+        1. Cleans leading and trailing whitespace.
+        2. Capitalizes the first character if it starts with a lowercase letter.
+        3. Cleans trailing whitespace.
+        4. If the paragraph ends with a comma (,), colon (:), or semicolon (;), replaces it with a period (.).
+        5. If the paragraph ends with an alphanumeric character without terminal punctuation
+           (not ending with ., !, ?, .", !", ?", ”, …), appends a period (.).
+        """
+        text = para_text.strip()
+        if not text:
+            return ""
+
+        # Capitalize the first character of each new paragraph if lowercase
+        if text[0].islower():
+            text = text[0].upper() + text[1:]
+
+        # Clean trailing whitespace
+        text = text.rstrip()
+
+        # Boundary terminal punctuation healing
+        terminal_punctuations = (".", "!", "?", '."', '!"', '?"', "”", "…")
+        if text.endswith((",", ":", ";")):
+            text = text[:-1].rstrip() + "."
+        elif not text.endswith(terminal_punctuations):
+            if text[-1].isalnum():
+                text = text + "."
+
+        return text
+
+    @staticmethod
     def to_paragraphs(
         segments: List[TranscriptSegment],
         pause_threshold_sec: float = 1.0,
@@ -55,6 +87,7 @@ class TranscriptFormatter:
         1. Acoustic silence between segments (pauses >= pause_threshold_sec).
         2. Sentence-ending punctuation followed by pause (>= sentence_pause_threshold_sec).
         3. Pacing limits (max sentences or words per paragraph) to prevent unbroken walls of text.
+        4. Sentence and paragraph boundary healing (punctuation and capitalization repair).
         """
         if not segments:
             return ""
@@ -74,7 +107,7 @@ class TranscriptFormatter:
 
             prev_ended_sentence = (
                 current_para_parts
-                and current_para_parts[-1].rstrip().endswith((".", "!", "?", '."', '!"', '?"', "”"))
+                and current_para_parts[-1].rstrip().endswith((".", "!", "?", '."', '!"', '?"', "”", "…"))
             )
             is_long_pause = prev_end is not None and gap >= pause_threshold_sec
             is_sentence_pause = prev_ended_sentence and gap >= sentence_pause_threshold_sec
@@ -84,7 +117,9 @@ class TranscriptFormatter:
             )
 
             if (is_long_pause or is_sentence_pause or is_para_limit) and current_para_parts:
-                paragraphs.append(" ".join(current_para_parts))
+                healed = TranscriptFormatter._heal_paragraph(" ".join(current_para_parts))
+                if healed:
+                    paragraphs.append(healed)
                 current_para_parts = []
                 sentence_count = 0
                 word_count = 0
@@ -92,11 +127,13 @@ class TranscriptFormatter:
             current_para_parts.append(text)
             prev_end = seg.end
             word_count += len(text.split())
-            if text.endswith((".", "!", "?", '."', '!"', '?"', "”")):
+            if text.endswith((".", "!", "?", '."', '!"', '?"', "”", "…")):
                 sentence_count += 1
 
         if current_para_parts:
-            paragraphs.append(" ".join(current_para_parts))
+            healed = TranscriptFormatter._heal_paragraph(" ".join(current_para_parts))
+            if healed:
+                paragraphs.append(healed)
 
         return "\n\n".join(paragraphs)
 

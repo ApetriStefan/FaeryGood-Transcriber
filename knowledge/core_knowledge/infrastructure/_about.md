@@ -72,12 +72,12 @@ This directory documents the deployment, packaging, execution environments, self
 ## 4. Test Suite & Quality Verification
 
 * **Framework:** Standard library `unittest` (`test_app.py`).
-* **Status:** 65 passing unit and integration tests (0 failures, 0 errors).
+* **Status:** 71 passing unit and integration tests (0 failures, 0 errors).
 * **Execution:**
   ```bash
   python -m unittest test_app.py
   ```
-* **Test Matrix:** 65 comprehensive unit and integration tests covering:
+* **Test Matrix:** 71 comprehensive unit and integration tests covering:
   - Formatter logic (paragraphs, timecodes, markdown).
   - Scratch lifecycle hygiene, isolated directories, and file lock backoff.
   - Auto-update cadence, bundle detection, and offline handling.
@@ -88,5 +88,6 @@ This directory documents the deployment, packaging, execution environments, self
   - Public facade symbol exports (ensuring `app.py` exposes all classes and helpers identically to `faery_app`).
   - macOS Application Integration (`TestMacOSAppIntegration`): platform guard on non-darwin OS, `.app` bundle hierarchy generation, permission fallback to `~/Applications`, frozen bundle replication, and directory writability validation.
   - Performance & Hardware Optimization Suite (`TestPerformanceOptimizations`): lazy WhisperModel loading, zero-subprocess WAV fast probing, mono 16kHz PCM conversion bypass, cached binary paths, batched SQLite synchronization, single-record in-place content updates, zero-disk-I/O search, demand-driven 0 Hz idle radio polling, physical CPU core thread allocation heuristics, macOS `prevent_app_nap` lifecycle management via `caffeinate`, and Intel OpenMP passive wait environment variables (`KMP_BLOCKTIME=0`, `OMP_WAIT_POLICY=PASSIVE`).
-  - Diagnostic Logging & Task ETA Suite (`TestCrashLoggerAndTaskETA`): `format_eta` boundary transitions (<15s, <60s, <3600s, $\ge$3600s), `ConfigManager` `model_rtf` getters, [0.05, 3.0] boundary clamping, Exponential Moving Average (EMA) calibration persistence, silent rotating crash logging (`~/.faery_transcriber_crash.log`), stdlib `faulthandler` integration, system diagnostic fallback synthesis via `get_diagnostic_log_content`, and `TranscriptionEngine` live blended RTF calculation and post-task EMA calibration.
+  - Diagnostic Logging & Task ETA Suite (`TestCrashLoggerAndTaskETA`): `format_eta` boundary transitions (<15s, <60s, <3600s, $\ge$3600s), `ConfigManager` `model_rtf` getters, [0.05, 3.0] boundary clamping, Exponential Moving Average (EMA) calibration persistence, silent rotating crash logging (`~/.faery_transcriber_crash.log`), stdlib `faulthandler` integration, system diagnostic fallback synthesis via `get_diagnostic_log_content`, `TranscriptionEngine` live blended RTF calculation and post-task EMA calibration, dynamic metadata display, model switching with tea hint (`☕`), `MODEL_DISPLAY_NAMES` validation with `large-v3-turbo` as default, and `ConfigManager` baseline RTF (0.48) and canonical alias resolution.
+  - Punctuation & Model Accuracy Optimization Suite (`TestFormattersAndEdgeCases`): `TranscriptFormatter._heal_paragraph()` boundary normalization (converting trailing commas, colons, and semicolons to periods on boundary closure, closing unpunctuated alphanumeric endings with periods, auto-capitalizing lowercase paragraph starts, and preserving legitimate terminal punctuation `.`, `!`, `?`, `."`, `!"`, `?"`, `”`, `…`), empty and whitespace-only boundary handling, and `TranscriptionEngine` punctuation priming injection (`initial_prompt=DEFAULT_PUNCTUATION_PROMPT`, `condition_on_previous_text=True`).
   - Launcher Script & Runtime Invariants Suite (`TestLauncherScripts`): script existence and structure validation for `Run_Mac.command` and `Run_Windows.bat`, Python >= 3.10 version checking logic (`sys.version_info >= (3, 10)`), candidate path scans omitting EOL Python 3.8/3.9, macOS built-in Python 3.9 stub rejection, stale/incompatible `.venv` detection and automatic purging simulation, frictionless 1-click Python 3.12 installer package download and invocation flow (`python-3.12.10-macos11.pkg`), and Windows WinForms alert dialog triggers.

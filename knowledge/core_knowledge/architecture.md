@@ -157,7 +157,7 @@ faery_app/
 - **Primary Symbol:** `ConfigManager` in `faery_app/config/config_manager.py`.
 - **Responsibilities:**
   - Loads and persists user preferences in `~/.faery_transcriber_config.json` (window size, output format, selected speech model, pause threshold, social login browser, timestamp of the last update check, ambient radio settings, and `model_rtf` mapping).
-  - **Hardware RTF Calibration Persistence (`model_rtf`):** Persists historical Real-Time Factor (RTF) benchmarks for each transcription model (`small.en`: default 0.35, `base.en`: default 0.15), clamped within the safety interval $[0.05, 3.0]$.
+  - **Hardware RTF Calibration Persistence (`model_rtf`):** Persists historical Real-Time Factor (RTF) benchmarks for each transcription model (`large-v3-turbo`: baseline default 0.48, `small.en`: default 0.35, `base.en`: default 0.15), clamped within the safety interval $[0.05, 3.0]$.
   - **Exponential Moving Average Calibration (`update_model_rtf`):** Dynamically updates persisted model RTFs upon completion of audio transcriptions ($\ge 10.0\text{s}$) using the formula:
     $$\text{new\_rtf} = \text{round}(0.7 \times \text{current\_rtf} + 0.3 \times \text{observed\_rtf}, 3)$$
     ensuring duration estimates continuously adapt to the specific machine's thermal and CPU processing capabilities without abrupt volatility.
@@ -189,6 +189,12 @@ faery_app/
   - Strongly typed data structures representing media properties and transcription utterances.
   - **Task ETA Formatter (`format_eta`):** Translates remaining duration seconds into intuitive human-friendly intervals: `< 15s` as `"a few seconds"`, `< 60s` as `"{s}s"`, `< 3600s` as `"{m} min"` or `"{m}m {s}s"`, and $\ge 3600\text{s}$ as `"{h}h {m}m"`.
   - **Acoustic Pause Detection:** Clusters continuous speech segments into clean, readable paragraphs when inter-word pauses exceed the configured threshold ($\ge 1.0\text{s} - 1.2\text{s}$).
+  - **Paragraph Boundary Healing (`_heal_paragraph`):** Automatically normalizes punctuation and capitalization at paragraph boundaries:
+    - Capitalizes the opening character of a paragraph if lowercase.
+    - Strips leading and trailing extraneous whitespace.
+    - Converts dangling non-terminal punctuation (commas `,`, colons `:`, semicolons `;`) at paragraph boundaries into terminal periods (`.`).
+    - Appends a terminal period (`.`) to unpunctuated alphanumeric boundaries.
+    - Preserves all legitimate terminal punctuation (`.`, `!`, `?`, `."`, `!"`, `?"`, `”`, `…`).
   - **Timestamped Transcripts (`[MM:SS]`):** Generates structured segment timestamps formatted as `[MM:SS]` for show notes, interview review, and video reference logs.
   - **Markdown Generation:** Formats complete transcripts with metadata headers and timestamps for documentation export.
 
@@ -210,7 +216,11 @@ faery_app/
   - **Hardware & Thermal-Aware CPU Scaling:** Configured with physical-core thread detection via `TranscriptionEngine.get_optimal_cpu_threads()` (querying `sysctl -n hw.physicalcpu` on macOS, `psutil.cpu_count(logical=False)` if available, and heuristics capped at `min(8, max(2, physical_cores))`). Caps thread allocation strictly to physical cores rather than virtual hyperthreads, preventing cache thrashing and thermal throttling on thin-and-light laptops.
   - **Intel OpenMP Zero Spin-Wait:** Sets `KMP_BLOCKTIME=0` and `OMP_WAIT_POLICY=PASSIVE` at the module entry level before `ctranslate2` initializes, ensuring OpenMP worker threads yield immediately rather than busy-spinning at 100% CPU between audio chunks.
   - **macOS Sonoma App Nap & Sleep Immunity:** Inference execution loops (`run_transcription` and `run_online_transcription`) are wrapped with the `prevent_app_nap()` context manager, spawning a background `caffeinate -i -w <pid>` process to prevent macOS Sonoma power management from throttling background transcription when the application window is occluded or minimized.
-  - Supports English-optimized model selection between `small.en` (recommended, high accuracy) and `base.en` (rapid draft processing).
+  - Supports English-optimized model selection:
+    - `large-v3-turbo` (default, maximum accuracy, 809M parameters, 4-layer fast decoder, ~809 MB INT8, baseline RTF 0.48).
+    - `small.en` (high accuracy, 244M parameters, ~244 MB INT8, baseline RTF 0.35).
+    - `base.en` (standard draft, 74M parameters, ~74 MB INT8, baseline RTF 0.15).
+  - **Punctuation Priming & Conditioning:** Supplies `initial_prompt=DEFAULT_PUNCTUATION_PROMPT` (`"Hello! Welcome to this recording. We ensure clean, natural punctuation, proper capitalization, and complete sentences."`) and enables `condition_on_previous_text=True` to enforce consistent question mark detection, capitalization, and book-quality punctuation cadence across transcription segments.
   - **Self-Calibrating Task ETA & Countdown Telemetry:**
     - **Initial ETA Calculation:** Before starting audio inference, queries historical model RTF (`ConfigManager.get_model_rtf(model_name)`) to establish an initial job estimate: $\text{initial\_eta} = \max(1, \text{round}(\text{total\_duration} \times \text{hist\_rtf}))$.
     - **Blended Live Countdown:** During token generation, calculates instantaneous progress from segment timestamps ($\text{progress} = \min(0.99, \max(0.01, \text{segment.end} / \text{total\_duration}))$) and live observed RTF ($\text{rtf\_live} = \text{elapsed} / \max(0.1, \text{segment.end})$). Smoothly blends historical and live rates over the first 25% of audio playback ($\text{weight} = \min(1.0, \text{progress} / 0.25)$, $\text{rtf\_eff} = (1.0 - \text{weight}) \times \text{hist\_rtf} + \text{weight} \times \text{rtf\_live}$), predicting remaining seconds $\text{eta\_sec} = \max(1, \text{round}((\text{total\_duration} - \text{segment.end}) \times \text{rtf\_eff}))$.

@@ -27,6 +27,7 @@ if sys.platform == "win32":
 
 # Re-export Constants
 from faery_app.constants import *
+from faery_app.constants import DEFAULT_PUNCTUATION_PROMPT
 
 # Re-export Config & Lifecycle
 from faery_app.config.config_manager import ConfigManager

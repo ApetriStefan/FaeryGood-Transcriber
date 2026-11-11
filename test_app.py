@@ -42,6 +42,9 @@ from app import (
     _create_macos_app_bundle,
     APP_NAME,
     APP_VERSION,
+    DEFAULT_MODEL_DISPLAY,
+    DEFAULT_PUNCTUATION_PROMPT,
+    MODEL_DISPLAY_NAMES,
     format_eta,
     init_crash_logging,
     log_exception,
@@ -58,7 +61,8 @@ class TestConfigManager(unittest.TestCase):
             
             # Default check
             self.assertTrue(Path(cfg.output_directory).exists())
-            self.assertEqual(cfg.model_selection, "High Accuracy (small.en - Recommended)")
+            self.assertEqual(cfg.model_selection, DEFAULT_MODEL_DISPLAY)
+            self.assertEqual(cfg.model_selection, "Maximum Accuracy (large-v3-turbo - Best Punctuation)")
             
             # Modify and save
             new_out = Path(td) / "CustomTranscripts"
@@ -812,6 +816,9 @@ class TestFaeryRadio(unittest.TestCase):
             controller = RadioStationController(cfg)
 
             self.assertGreater(len(controller.music_files), 0, "Should discover music files")
+            music_names = [p.name for p in controller.music_files]
+            self.assertIn("The Green Leaf Thief.mp3", music_names, "Should discover 'The Green Leaf Thief.mp3'")
+            self.assertIn("Where You Gonna Run_.mp3", music_names, "Should discover 'Where You Gonna Run_.mp3'")
             self.assertIsNotNone(controller.liability_file, "Should discover Liability.mp3")
             self.assertEqual(controller.liability_file.name, "Liability.mp3")
             self.assertIsNotNone(controller.grift_file, "Should discover Grift.mp3")
@@ -1611,9 +1618,15 @@ class TestCrashLoggerAndTaskETA(unittest.TestCase):
             cfg = ConfigManager(cfg_path)
 
             # Test defaults
+            self.assertAlmostEqual(cfg.get_model_rtf("large-v3-turbo"), 0.48)
+            self.assertAlmostEqual(cfg.get_model_rtf("turbo"), 0.48)
+            self.assertAlmostEqual(cfg.get_model_rtf("Maximum Accuracy (large-v3-turbo - Best Punctuation)"), 0.48)
+            self.assertAlmostEqual(cfg.get_model_rtf("Maximum Accuracy"), 0.48)
             self.assertAlmostEqual(cfg.get_model_rtf("small.en"), 0.35)
+            self.assertAlmostEqual(cfg.get_model_rtf("High Accuracy (small.en - Fast)"), 0.35)
             self.assertAlmostEqual(cfg.get_model_rtf("High Accuracy (small.en - Recommended)"), 0.35)
             self.assertAlmostEqual(cfg.get_model_rtf("base.en"), 0.15)
+            self.assertAlmostEqual(cfg.get_model_rtf("Standard Draft (base.en - Ultra Fast)"), 0.15)
             self.assertAlmostEqual(cfg.get_model_rtf("Standard (base.en - Fast)"), 0.15)
 
             # Test EMA update: 0.7 * 0.35 + 0.3 * 0.15 = 0.245 + 0.045 = 0.29
@@ -1621,9 +1634,15 @@ class TestCrashLoggerAndTaskETA(unittest.TestCase):
             self.assertAlmostEqual(cfg.get_model_rtf("small.en"), 0.29, places=3)
             self.assertAlmostEqual(cfg.get_model_rtf("High Accuracy (small.en - Recommended)"), 0.29, places=3)
 
+            # Test EMA update for large-v3-turbo: 0.7 * 0.48 + 0.3 * 0.40 = 0.336 + 0.120 = 0.456
+            cfg.update_model_rtf("large-v3-turbo", 0.40)
+            self.assertAlmostEqual(cfg.get_model_rtf("large-v3-turbo"), 0.456, places=3)
+            self.assertAlmostEqual(cfg.get_model_rtf("Maximum Accuracy (large-v3-turbo - Best Punctuation)"), 0.456, places=3)
+
             # Test persistence in new instance
             cfg2 = ConfigManager(cfg_path)
             self.assertAlmostEqual(cfg2.get_model_rtf("small.en"), 0.29, places=3)
+            self.assertAlmostEqual(cfg2.get_model_rtf("large-v3-turbo"), 0.456, places=3)
 
             # Test clamping to [0.05, 3.0]
             cfg.update_model_rtf("small.en", 10.0)
@@ -1729,6 +1748,12 @@ class TestCrashLoggerAndTaskETA(unittest.TestCase):
             # Verify RTF updated: 0.7 * 0.35 + 0.3 * (6.0 / 30.0 = 0.20) = 0.305
             self.assertAlmostEqual(cfg.get_model_rtf("small.en"), 0.305, places=3)
 
+            # Verify transcribe received initial_prompt and condition_on_previous_text
+            mock_model.transcribe.assert_called_once()
+            _, kwargs = mock_model.transcribe.call_args
+            self.assertEqual(kwargs.get("initial_prompt"), DEFAULT_PUNCTUATION_PROMPT)
+            self.assertTrue(kwargs.get("condition_on_previous_text"))
+
     def test_dynamic_metadata_display_and_model_switching(self):
         with tempfile.TemporaryDirectory() as td:
             cfg_path = Path(td) / "ui_cfg.json"
@@ -1769,6 +1794,132 @@ class TestCrashLoggerAndTaskETA(unittest.TestCase):
             finally:
                 app.radio_controller.stop()
                 app.destroy()
+
+
+class TestFormattersAndEdgeCases(unittest.TestCase):
+    """
+    Test suite for Punctuation & Model Accuracy Optimization:
+    1. TranscriptFormatter.to_paragraphs boundary healing:
+       - Trailing commas, colons, semicolons converted to periods on paragraph closure.
+       - Unpunctuated paragraph ends closed with periods when ending in alphanumeric characters.
+       - Paragraph starts capitalized when beginning with lowercase.
+       - Terminal punctuation preserved (. ! ? ." !" ?" ” …).
+    2. MODEL_DISPLAY_NAMES and DEFAULT_MODEL_DISPLAY contain large-v3-turbo.
+    3. ConfigManager RTF lookup for large-v3-turbo and turbo aliases.
+    4. TranscriptionEngine uses initial_prompt=DEFAULT_PUNCTUATION_PROMPT.
+    """
+
+    def test_model_constants_and_displays(self):
+        self.assertIn("Maximum Accuracy (large-v3-turbo - Best Punctuation)", MODEL_DISPLAY_NAMES)
+        self.assertEqual(
+            MODEL_DISPLAY_NAMES["Maximum Accuracy (large-v3-turbo - Best Punctuation)"],
+            "large-v3-turbo",
+        )
+        self.assertEqual(
+            DEFAULT_MODEL_DISPLAY,
+            "Maximum Accuracy (large-v3-turbo - Best Punctuation)",
+        )
+        self.assertIn("large-v3-turbo", DEFAULT_MODEL_DISPLAY)
+        self.assertIn("Best Punctuation", DEFAULT_MODEL_DISPLAY)
+        self.assertTrue(len(DEFAULT_PUNCTUATION_PROMPT) > 20)
+        self.assertIn("punctuation", DEFAULT_PUNCTUATION_PROMPT.lower())
+
+    def test_config_manager_large_v3_turbo_rtf_lookup(self):
+        with tempfile.TemporaryDirectory() as td:
+            cfg = ConfigManager(Path(td) / "test_cfg.json")
+            # Default lookup
+            self.assertAlmostEqual(cfg.get_model_rtf("large-v3-turbo"), 0.48)
+            self.assertAlmostEqual(cfg.get_model_rtf("turbo"), 0.48)
+            self.assertAlmostEqual(cfg.get_model_rtf("Maximum Accuracy"), 0.48)
+            self.assertAlmostEqual(cfg.get_model_rtf(DEFAULT_MODEL_DISPLAY), 0.48)
+            # Canonical normalization
+            self.assertEqual(ConfigManager._canonical_model_key("large-v3-turbo"), "large-v3-turbo")
+            self.assertEqual(ConfigManager._canonical_model_key("turbo"), "large-v3-turbo")
+            self.assertEqual(ConfigManager._canonical_model_key("Maximum Accuracy"), "large-v3-turbo")
+            self.assertEqual(ConfigManager._canonical_model_key(DEFAULT_MODEL_DISPLAY), "large-v3-turbo")
+
+    def test_to_paragraphs_boundary_healing_trailing_punctuation(self):
+        from app import TranscriptFormatter
+        # Trailing comma, colon, semicolon converted to period on boundary close
+        segs = [
+            TranscriptSegment(start=0.0, end=2.0, text="First introductory clause,"),
+            TranscriptSegment(start=4.0, end=6.0, text="second section follows:"),
+            TranscriptSegment(start=8.0, end=10.0, text="third section note;"),
+            TranscriptSegment(start=12.0, end=14.0, text="final clause without punctuation"),
+        ]
+        result = TranscriptFormatter.to_paragraphs(segs, pause_threshold_sec=1.0)
+        paras = result.split("\n\n")
+        self.assertEqual(len(paras), 4)
+        # Comma replaced with period
+        self.assertEqual(paras[0], "First introductory clause.")
+        # Colon replaced with period, lowercase capitalized
+        self.assertEqual(paras[1], "Second section follows.")
+        # Semicolon replaced with period, lowercase capitalized
+        self.assertEqual(paras[2], "Third section note.")
+        # Alphanumeric end closed with period, lowercase capitalized
+        self.assertEqual(paras[3], "Final clause without punctuation.")
+
+    def test_to_paragraphs_boundary_healing_capitalization_and_preservation(self):
+        from app import TranscriptFormatter
+        # Paragraph starts capitalized; valid terminal punctuation preserved
+        segs = [
+            TranscriptSegment(start=0.0, end=2.0, text="good morning to the faery apothecary!"),
+            TranscriptSegment(start=4.0, end=6.0, text="are these herbs fresh?"),
+            TranscriptSegment(start=8.0, end=10.0, text="she whispered, \"whimsy is power.\""),
+            TranscriptSegment(start=12.0, end=14.0, text="and the journey continues…"),
+        ]
+        result = TranscriptFormatter.to_paragraphs(segs, pause_threshold_sec=1.0)
+        paras = result.split("\n\n")
+        self.assertEqual(len(paras), 4)
+        self.assertEqual(paras[0], "Good morning to the faery apothecary!")
+        self.assertEqual(paras[1], "Are these herbs fresh?")
+        self.assertEqual(paras[2], "She whispered, \"whimsy is power.\"")
+        self.assertEqual(paras[3], "And the journey continues…")
+
+    def test_to_paragraphs_boundary_healing_trailing_whitespace_and_empty(self):
+        from app import TranscriptFormatter
+        self.assertEqual(TranscriptFormatter.to_paragraphs([]), "")
+        segs = [
+            TranscriptSegment(start=0.0, end=2.0, text="  hello world,   "),
+        ]
+        result = TranscriptFormatter.to_paragraphs(segs)
+        self.assertEqual(result, "Hello world.")
+
+    def test_transcription_engine_uses_punctuation_prompt(self):
+        with tempfile.TemporaryDirectory() as td:
+            cfg = ConfigManager(Path(td) / "prompt_cfg.json")
+            engine = TranscriptionEngine(config_manager=cfg)
+
+            mock_meta = MediaMetadata(
+                path=Path(td) / "audio.mp4",
+                file_size_bytes=1024,
+                duration_seconds=5.0,
+                has_audio=True,
+                format_name="mp4",
+            )
+            mock_model = MagicMock()
+            mock_model.transcribe.return_value = (iter([]), MagicMock(duration=5.0))
+
+            with patch.object(engine, "get_model", return_value=mock_model), \
+                 patch("faery_app.media.processor.MediaProcessor.extract_16k_mono_wav"), \
+                 patch("faery_app.utils.system.check_free_disk_space", return_value=True):
+
+                engine.run_transcription(
+                    media_file=Path(td) / "audio.mp4",
+                    media_meta=mock_meta,
+                    model_name="large-v3-turbo",
+                    output_dir=Path(td),
+                    cancel_event=threading.Event(),
+                    status_cb=lambda s: None,
+                    progress_cb=lambda p: None,
+                    segment_cb=lambda s: None,
+                    overwrite=True,
+                )
+
+            mock_model.transcribe.assert_called_once()
+            _, kwargs = mock_model.transcribe.call_args
+            self.assertEqual(kwargs.get("initial_prompt"), DEFAULT_PUNCTUATION_PROMPT)
+            self.assertTrue(kwargs.get("condition_on_previous_text"))
 
 
 class TestLauncherScripts(unittest.TestCase):

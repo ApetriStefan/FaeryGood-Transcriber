@@ -19,7 +19,7 @@ A delightful, 100% private, on-device desktop transcription studio and historica
 
 ## ✨ Features at a Glance
 
-* **🔒 100% On-Device & Private:** Powered by `faster-whisper` running locally on your computer's CPU (`int8` quantization with adaptive multi-core CPU worker threads, up to 8 threads) using English-optimized speech models (`small.en` and `base.en`). Your videos, voice memos, and transcripts **never** touch the cloud, require no third-party API keys, and incur zero recurring costs.
+* **🔒 100% On-Device & Private:** Powered by `faster-whisper` running locally on your computer's CPU (`int8` quantization with adaptive multi-core CPU worker threads, up to 8 threads) using English-optimized speech models (`large-v3-turbo`, `small.en`, and `base.en`). Your videos, voice memos, and transcripts **never** touch the cloud, require no third-party API keys, and incur zero recurring costs.
 * **🎙️ Built-in Microphone Recording (`⌘D` / `Ctrl+D`):** Record voice notes and ideas directly inside the studio (`16kHz` mono PCM WAV via `sounddevice`) with a live `MM:SS` recording timer. Recordings are captured into a private scratch space, automatically transcribed on stop, and wiped cleanly afterward.
 * **🌐 Paste Any Social Link (Instagram, TikTok, YouTube, Facebook):** Simply copy a link and click **`📋 Paste Link`** (`⌘L` / `Ctrl+L`). Audio is extracted into a temporary scratch space, resampled, transcribed, and **immediately destroyed**—leaving zero temporary media clutter on your hard drive.
 * **📄 Smart Acoustic Formatting:**
@@ -32,7 +32,7 @@ A delightful, 100% private, on-device desktop transcription studio and historica
   * **Instant SQLite FTS5 Full-Text Search:** Powered by an SQLite FTS5 virtual table with `unicode61` tokenization—enabling lightning-fast spoken word search not just by title or date, but **by any word or phrase spoken in the audio**!
   * **Speech Snippet Previews:** Search cards highlight the exact sentence from the transcript where the spoken words were detected (e.g. `💬 "...save for the muffled rhythm of rain..."`).
   * **Seamless Legacy Migration:** Automatically upgrades older JSON histories (`~/.faery_transcriptions_history.json`) into SQLite on startup, keeping a `.bak` copy for safety.
-* **📻 Ambient Faery Radio (104.9 The Grift FM):** Toggle on the radio switch (`⌘R` / `Ctrl+R`) to summon a retro-modern ambient music player docked gracefully at the bottom of the screen. Features 9 original apothecary tracks, GTA-style DJ station bumpers, high-probability satirical legal disclaimers, embedded album artwork, click-to-seek timeline controls, and full keyboard media navigation. Completely disappears when toggled off to keep your workspace 100% clean.
+* **📻 Ambient Faery Radio (104.9 The Grift FM):** Toggle on the radio switch (`⌘R` / `Ctrl+R`) to summon a retro-modern ambient music player docked gracefully at the bottom of the screen. Features 12 original apothecary tracks (including *"The Green Leaf Thief"* and *"Where You Gonna Run?"*), GTA-style DJ station bumpers, high-probability satirical legal disclaimers, embedded album artwork, click-to-seek timeline controls, and full keyboard media navigation. Completely disappears when toggled off to keep your workspace 100% clean.
 * **🔐 Built-in "Social Login" Cookie Bridge:** Safely transcribe login-walled Instagram Reels or Facebook videos using your existing browser cookies (Safari, Chrome, Firefox, Edge, Brave) without ever sharing your password.
 * **🔄 Automatic Weekly Background Updates:** When running from a git clone, the app automatically checks for and pulls updates from GitHub every 7 days upon launch, without ever interrupting your workflow.
 * **🪄 Self-Calibrating Task ETA & Dynamic Estimate Display:** Upfront estimated time is displayed immediately when media is selected or recorded, accompanied by a whimsical `☕ (time for tea!)` indicator whenever jobs are estimated at 2 minutes or longer. Switching models dynamically recalculates the estimate. During transcription, a live blended estimator smoothly transitions from historical Real-Time Factor (RTF) to live measured throughput, continuously learning machine performance using an Exponential Moving Average (EMA) saved to settings.
@@ -120,9 +120,24 @@ flowchart LR
 
 1. Click **`📁 Select Video or Audio…`** (or press `⌘O` / `Ctrl+O`) to pick a file, or click **`🎙️ Record Mic`** (`⌘D` / `Ctrl+D`) to record a voice note directly from your microphone.
 2. Select any media file on your computer (`.mp4`, `.mov`, `.m4a`, `.mp3`, `.wav`, `.mkv`, `.aac`, `.flac`).
-3. Select your preferred **English Transcription Engine** (specifically tuned and optimized for English speech):
-   * **`High Accuracy (small.en - Recommended)`:** Outstanding English punctuation, vocabulary, and grammar.
-   * **`Standard (base.en - Fast)`:** 2x faster English transcription, perfect for short 30-second clips or quick drafts.
+3. Select your preferred **English Transcription Engine**:
+   * **`Maximum Accuracy (large-v3-turbo - Best Punctuation)` (Default & Recommended):** 809M parameters, 4-layer fast decoder (~809 MB INT8). Book-quality punctuation, accurate question marks, natural commas, and clean sentence structures.
+   * **`High Accuracy (small.en - Fast)`:** Outstanding English punctuation, vocabulary, and grammar with fast processing speed.
+   * **`Standard Draft (base.en - Ultra Fast)`:** 2–3x faster English transcription, perfect for short 30-second clips or quick draft searches.
+
+#### Model Comparison Table
+
+| Model | Parameters | Architecture | INT8 Model Size | Baseline RTF | Best For |
+|---|---|---|---|---|---|
+| **`large-v3-turbo`** *(Default)* | 809M | 4-layer fast decoder | ~809 MB | ~0.48 | Book-quality punctuation, question marks, clean sentence structures, direct publishing |
+| **`small.en`** | 244M | English-only dense decoder | ~244 MB | ~0.35 | Balanced high-speed English transcription for long podcasts and interviews |
+| **`base.en`** | 74M | English-only dense decoder | ~74 MB | ~0.15 | Ultra-fast rough drafts, rapid keyword searching, short 30s clips |
+
+#### 🖋️ 3-Pillar Punctuation Architecture
+To guarantee clean, publication-ready transcripts without manual editing headaches, Faery Good Transcriber employs a coordinated 3-pillar punctuation pipeline:
+1. **`large-v3-turbo` Model Foundation:** Leverages OpenAI's 809M-parameter turbo architecture with fine-grained acoustic attention and accurate question-mark and comma inflection.
+2. **Contextual Punctuation Priming (`DEFAULT_PUNCTUATION_PROMPT` & `condition_on_previous_text=True`):** Injects a standardized formatting prompt (`"Hello! Welcome to this recording. We ensure clean, natural punctuation, proper capitalization, and complete sentences."`) before decoding begins, maintaining stylistic punctuation continuity across all segments.
+3. **Paragraph Boundary Healing (`_heal_paragraph()`):** Automatically inspects and normalizes boundary tokens on paragraph closure—converting dangling commas, colons, or semicolons to terminal periods, capitalizing paragraph start characters, and appending periods to unpunctuated alphanumeric endings while preserving legitimate terminal marks (`.`, `!`, `?`, `."`, `!"`, `?"`, `”`, `…`).
 4. Click **`✨ Generate Transcript`** (`⌘Return` / `Ctrl+Enter`).
 5. Output text files (`.txt`) and Markdown files (`.md`) are automatically saved to your output directory (`Documents/Transcriptions/` by default).
 
@@ -170,7 +185,7 @@ Need some inspiring background music while reviewing your work?
 
 Toggle the **`📻 Radio`** switch in the top toolbar (or press `⌘R` / `Ctrl+R`) to tune into **104.9 The Grift FM**—a custom ambient lo-fi station complete with relaxing beats, embedded album art, and tongue-in-cheek radio bumpers.
 
-* **9 Original Apothecary Tracks:** Stored in `assets/music/` and played locally with low CPU usage via `pygame.mixer`.
+* **11 Original Apothecary Tracks:** Stored in `assets/music/` and played locally with low CPU usage via `pygame.mixer` (featuring tracks like *"The Green Leaf Thief"* and *"Where You Gonna Run?"*).
 * **GTA-Style DJ Breaks & Bumpers:** Plays station IDs, anti-repeat bumper rotations, and hilarious satirical legal disclaimers between tracks.
 * **Zero-Workspace Clutter:** When toggled off, the player vanishes completely from the UI, keeping 100% of the screen dedicated to your transcripts.
 * **Click-to-Seek Timeline & Volume:** Jump anywhere in a song with a single mouse click or use full keyboard media controls.
@@ -221,9 +236,9 @@ Faery Good Transcriber is engineered to be self-contained, robust, and completel
 1. **Audio Extraction, Resampling & Native WAV Fast-Path (Static FFmpeg):**  
    Whether you select a 4K `.mov` video, an `.mp4` reel, or paste a web link, bundled static FFmpeg binaries extract the audio and resample it into a clean **16,000Hz mono 16-bit PCM WAV stream**. Standard `.wav` files use a zero-subprocess native Python `wave` header fast-path for instant metadata inspection, and pre-normalized 16kHz mono PCM recordings (such as built-in microphone voice notes) bypass FFmpeg conversion entirely.
 2. **On-Device AI Speech Recognition (`faster-whisper`):**  
-   Runs OpenAI's Whisper model locally on your computer's CPU (`int8` quantization with adaptive multi-core CPU worker threads, up to 8 threads) with lazy model loading for instant app launch and 60ms coalesced real-time text streaming. No audio is transmitted over the internet, and inference runs at $\approx 3\times$ to $8\times$ real-time speed on modern processors.
-3. **Smart Pause & Acoustic Pacing Formatter:**  
-   Analyzes silence intervals between words in real time. Silences $\ge 1.0$ second automatically trigger clean paragraph breaks, matching your natural speaking cadence.
+   Runs OpenAI's Whisper model locally on your computer's CPU (`int8` quantization with adaptive multi-core CPU worker threads, up to 8 threads) with lazy model loading for instant app launch and 60ms coalesced real-time text streaming. Features three models: `large-v3-turbo` (809M parameters, 4-layer fast decoder, ~809 MB INT8, default), `small.en` (244M parameters, ~244 MB INT8), and `base.en` (74M parameters, ~74 MB INT8). No audio is transmitted over the internet, and inference runs at $\approx 3\times$ to $8\times$ real-time speed on modern processors.
+3. **Smart Pause & 3-Pillar Punctuation Architecture:**  
+   Combines `large-v3-turbo` acoustic accuracy with standardized formatting prompts (`DEFAULT_PUNCTUATION_PROMPT`) and automatic paragraph boundary healing (`_heal_paragraph()`). Analyzes silence intervals between words in real time ($\ge 1.0$s pauses trigger clean paragraph breaks), auto-capitalizes sentence starts, normalizes trailing punctuation (replacing dangling commas, colons, and semicolons with periods), and preserves terminal punctuation (`.`, `!`, `?`, `."`, `!"`, `?"`, `”`, `…`) to deliver book-quality reading flow.
 4. **Guaranteed Scratch Hygiene (`ScratchLifecycleManager`):**  
    All temporary audio processing, microphone voice recordings (`faery_mic_*`), and online downloads (`faery_transcribe_*`) occur inside isolated scratch directories. The lifecycle manager binds to application exit, cancellation handlers, and POSIX/Windows signals (`SIGTERM`, `SIGINT`) to guarantee that temporary audio files are purged immediately under all circumstances.
 5. **Resilient Social Extraction & Background Self-Updating (`OnlineMediaFetcher` & `AutoUpdater`):**  
@@ -255,7 +270,7 @@ The repository includes an extensive automated test suite covering all critical 
 # Activate your virtual environment, then run:
 python test_app.py
 ```
-*(All 65 automated unit and integration tests, including launcher script invariants, execute in under 6 seconds).*
+*(All 71 automated unit and integration tests, including launcher script invariants, execute in under 8 seconds).*
 
 ### Building Standalone macOS App & DMG
 If you want to create a native macOS drag-and-drop installer:
@@ -308,14 +323,14 @@ TranscriptionEngine/
 │   ├── utils/                  # 🛠️ System utilities & zero-sudo macOS application installer
 │   └── ui/                     # 🌸 CustomTkinter presentation layer (views, dialogs, menus, dock)
 ├── requirements.txt            # 📦 Production Python dependencies
-├── test_app.py                 # 🧪 Automated unit & integration test suite (65 tests)
+├── test_app.py                 # 🧪 Automated unit & integration test suite (71 tests)
 ├── Run_Windows.bat             # 🪟 1-Click self-healing Windows launcher
 ├── Run_Mac.command             # 🍎 1-Click self-healing macOS launcher & auto-installer to Applications
 ├── Build_Mac_App.command       # 🍏 1-Click standalone .app bundle builder
 ├── Create_Mac_DMG.command      # 💿 1-Click drag-and-drop .dmg installer creator
 ├── FaeryTranscriber.spec       # ⚙️ PyInstaller standalone packaging specification
 ├── assets/                     # 🎨 Official Faery Good icons, artwork & audio
-│   ├── music/                  # 🎵 Original ambient tracks (9 songs)
+│   ├── music/                  # 🎵 Original ambient tracks (12 songs)
 │   ├── announcer/              # 🎙️ GTA-style DJ station clips, disclaimers & bumpers
 │   ├── faery_icon.icns         # 🍎 macOS native application & DMG icon
 │   ├── faery_icon.ico          # 🪟 Windows native multi-size application icon

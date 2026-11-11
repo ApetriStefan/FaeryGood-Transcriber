@@ -10,7 +10,7 @@
 
 ## Mission
 
-Faery Good Transcriber is a standalone, privacy-first desktop application designed for creators and storytellers. It transcribes English audio/video files, built-in microphone voice recordings (`MicrophoneRecorder`), and social media clips (Instagram Reels, YouTube, TikTok, Facebook) completely offline on the user's local CPU using `faster-whisper` (`small.en` and `base.en`), formats speech into clean paragraphs and timestamped transcripts (`[MM:SS]`), saves outputs to `Documents/Transcriptions`, guarantees zero-residue temporary audio cleanup via `ScratchLifecycleManager`, and provides an ambient background radio player.
+Faery Good Transcriber is a standalone, privacy-first desktop application designed for creators and storytellers. It transcribes English audio/video files, built-in microphone voice recordings (`MicrophoneRecorder`), and social media clips (Instagram Reels, YouTube, TikTok, Facebook) completely offline on the user's local CPU using `faster-whisper` (`large-v3-turbo`, `small.en`, `base.en`), formats speech into clean paragraphs with boundary healing and timestamped transcripts (`[MM:SS]`), saves outputs to `Documents/Transcriptions`, guarantees zero-residue temporary audio cleanup via `ScratchLifecycleManager`, and provides an ambient background radio player.
 
 ---
 
@@ -31,7 +31,7 @@ Faery Good Transcriber is a standalone, privacy-first desktop application design
 The single source of truth for repository documentation structure:
 
 - **`components/`**: Defines the system's software modules, their class contracts, boundaries, and thread invariants across `faery_app/`.
-- **`infrastructure/`**: Documents execution runtimes, platform-specific launchers, PyInstaller specs, and testing harnesses (37 automated tests).
+- **`infrastructure/`**: Documents execution runtimes, platform-specific launchers, PyInstaller specs, and testing harnesses (71 automated tests).
 - **`processes/`**: Standard operating procedures, test verification routines, packaging workflows, and user delivery steps.
 - **`team_and_stakeholders/`**: The authoritative registry for people, contact info, team structure, and asset ownership. *(The ONLY directory where personal names may appear).*
 
@@ -44,7 +44,7 @@ The single source of truth for repository documentation structure:
 | **Faery Good Transcriber** | The official desktop transcription application. |
 | **faery_app** | The modular Python package containing decoupled subsystems (`config`, `lifecycle`, `models`, `media`, `transcription`, `radio`, `history`, `utils`, `ui`). |
 | **app.py** | Backwards-compatible public facade re-exporting all symbols and bootstrapping application startup. |
-| **faster-whisper** | CTranslate2-accelerated implementation of OpenAI Whisper running 100% locally on CPU (`int8` quantization) with English-optimized models (`small.en`, `base.en`). |
+| **faster-whisper** | CTranslate2-accelerated implementation of OpenAI Whisper running 100% locally on CPU (`int8` quantization) with English-optimized models (`large-v3-turbo`, `small.en`, `base.en`). |
 | **yt-dlp / deno** | Online media extraction stack (`yt-dlp[default]`, `yt-dlp-ejs`, and bundled `deno` runtime) used to fetch temporary audio streams from social URLs and solve YouTube JS challenges. |
 | **MicrophoneRecorder** | Built-in microphone voice recording subsystem (`faery_app/media/recorder.py`) capturing 16kHz mono PCM WAV via `sounddevice` into `faery_mic_*` scratch directories. |
 | **CookiePermissionDialog** | Modal dialog (`faery_app/ui/dialogs/cookie_permission.py`) gating browser cookie extraction in `Auto / Public` mode when a social clip is behind a login wall. |
@@ -63,6 +63,6 @@ The single source of truth for repository documentation structure:
 |---|---|---|---|
 | `architecture.md` | 🟢 Complete | 2026-11-05 | Modular `faery_app` package architecture, scratch lifecycle, SQLite FTS5 database, and launcher specs |
 | `components/` | 🟢 Complete | 2026-11-05 | Modular subsystem contracts mapped to `faery_app/` paths, SQLite FTS5 history, and `app.py` facade |
-| `infrastructure/` | 🟢 Complete | 2026-11-05 | Windows & Mac self-healing launchers, PyInstaller specs, 41 passing unit/integration tests |
-| `processes/` | 🟢 Complete | 2026-11-05 | Friend delivery, 41-test verification routine, scratch hygiene SOPs |
+| `infrastructure/` | 🟢 Complete | 2026-11-11 | Windows & Mac self-healing launchers, PyInstaller specs, 71 passing unit/integration tests |
+| `processes/` | 🟢 Complete | 2026-11-11 | Friend delivery, 71-test verification routine, scratch hygiene SOPs |
 | `team_and_stakeholders/` | 🟢 Complete | 2026-11-05 | Contacts, team structure, and ownership map populated |

@@ -56,10 +56,16 @@ DEFAULT_OUTPUT_DIR = Path.home() / "Documents" / "Transcriptions"
 SUPPORTED_MEDIA_EXTENSIONS = {".mp4", ".mov", ".m4a", ".mp3", ".wav", ".mkv"}
 
 MODEL_DISPLAY_NAMES = {
-    "High Accuracy (small.en - Recommended)": "small.en",
-    "Standard (base.en - Fast)": "base.en",
+    "Maximum Accuracy (large-v3-turbo - Best Punctuation)": "large-v3-turbo",
+    "High Accuracy (small.en - Fast)": "small.en",
+    "Standard Draft (base.en - Ultra Fast)": "base.en",
 }
-DEFAULT_MODEL_DISPLAY = "High Accuracy (small.en - Recommended)"
+DEFAULT_MODEL_DISPLAY = "Maximum Accuracy (large-v3-turbo - Best Punctuation)"
+
+DEFAULT_PUNCTUATION_PROMPT = (
+    "Hello! Welcome to this recording. "
+    "We ensure clean, natural punctuation, proper capitalization, and complete sentences."
+)
 
 COOKIE_BROWSER_OPTIONS = {
     "Auto / Public (Recommended)": None,

@@ -27,7 +27,7 @@ DEFAULT_CONFIG = {
     "last_update_check": 0.0,
     "radio_enabled": False,
     "radio_volume": 0.7,
-    "model_rtf": {"small.en": 0.35, "base.en": 0.15},
+    "model_rtf": {"large-v3-turbo": 0.48, "small.en": 0.35, "base.en": 0.15},
 }
 
 
@@ -160,16 +160,19 @@ class ConfigManager:
         if model_name in MODEL_DISPLAY_NAMES:
             return MODEL_DISPLAY_NAMES[model_name]
         name_lower = (model_name or "").lower()
+        if "maximum" in name_lower or "turbo" in name_lower or "large" in name_lower:
+            return "large-v3-turbo"
         if "small" in name_lower or "high accuracy" in name_lower:
             return "small.en"
-        if "base" in name_lower or "standard" in name_lower or "fast" in name_lower:
+        if "base" in name_lower or "standard" in name_lower or "ultra fast" in name_lower or "fast" in name_lower:
             return "base.en"
         return model_name
 
     def get_model_rtf(self, model_name: str) -> float:
         """
         Returns the persisted Real-Time Factor (RTF) for model_name clamped to [0.05, 3.0].
-        Defaults to 0.35 for small.en / High Accuracy and 0.15 for base.en / Standard / Fast.
+        Defaults to 0.48 for large-v3-turbo / Maximum Accuracy, 0.35 for small.en / High Accuracy,
+        and 0.15 for base.en / Standard Draft / Fast.
         """
         rtf_dict = self.data.get("model_rtf")
         if not isinstance(rtf_dict, dict):
@@ -183,15 +186,19 @@ class ConfigManager:
 
         if val is None:
             name_lower = (model_name or "").lower()
-            if "base" in name_lower or "standard" in name_lower or "fast" in name_lower:
+            if "maximum" in name_lower or "turbo" in name_lower or "large" in name_lower:
+                val = 0.48
+            elif "base" in name_lower or "standard" in name_lower or "ultra fast" in name_lower or "fast" in name_lower:
                 val = 0.15
-            else:
+            elif "small" in name_lower or "high accuracy" in name_lower:
                 val = 0.35
+            else:
+                val = 0.48
 
         try:
             val = float(val)
         except (ValueError, TypeError):
-            val = 0.35
+            val = 0.48
 
         return max(0.05, min(3.0, val))
 

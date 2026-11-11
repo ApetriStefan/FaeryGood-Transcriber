@@ -20,7 +20,11 @@ if TYPE_CHECKING:
 WhisperModel = None
 
 from faery_app.config.config_manager import ConfigManager
-from faery_app.constants import MIN_DISK_SPACE_MB, DEFAULT_COOKIE_BROWSER
+from faery_app.constants import (
+    MIN_DISK_SPACE_MB,
+    DEFAULT_COOKIE_BROWSER,
+    DEFAULT_PUNCTUATION_PROMPT,
+)
 from faery_app.lifecycle.scratch import ScratchLifecycleManager
 from faery_app.media.processor import MediaProcessor
 from faery_app.media.online_fetcher import OnlineMediaFetcher
@@ -113,8 +117,15 @@ class TranscriptionEngine:
             if self.is_model_cached(model_size_or_path):
                 status_cb("⚡ Loading speech model into memory...")
             else:
+                model_name_lower = str(model_size_or_path).lower()
+                if "turbo" in model_name_lower or "large" in model_name_lower:
+                    size_hint = "~809 MB"
+                elif "small" in model_name_lower:
+                    size_hint = "~460 MB"
+                else:
+                    size_hint = "~140 MB"
                 status_cb(
-                    "📥 First-time setup: Downloading speech recognition model (~460 MB)... "
+                    f"📥 First-time setup: Downloading speech recognition model ({size_hint})... "
                     "(One-time download. Future runs will be 100% offline!)"
                 )
 
@@ -191,6 +202,8 @@ class TranscriptionEngine:
                     language="en",
                     vad_filter=True,
                     vad_parameters=dict(min_silence_duration_ms=500),
+                    initial_prompt=DEFAULT_PUNCTUATION_PROMPT,
+                    condition_on_previous_text=True,
                 )
 
                 if media_meta.duration_seconds <= 0 and info and getattr(info, "duration", None):
@@ -357,6 +370,8 @@ class TranscriptionEngine:
                     language="en",
                     vad_filter=True,
                     vad_parameters=dict(min_silence_duration_ms=500),
+                    initial_prompt=DEFAULT_PUNCTUATION_PROMPT,
+                    condition_on_previous_text=True,
                 )
 
                 if probed_meta.duration_seconds <= 0 and info and getattr(info, "duration", None):
