@@ -58,15 +58,19 @@ cd FaeryGood-Transcriber
 
 ### 2. Launch with One Click!
 
-The repository includes intelligent **Self-Healing Launchers** that automatically detect Python, provision an isolated virtual environment (`.venv`), install required packages, and open the app:
+The repository includes intelligent **Self-Healing Launchers** that automatically detect Python 3.10+, provision an isolated virtual environment (`.venv`), install required packages, and open the app:
 
 * 🪟 **On Windows:** Double-click **`Run_Windows.bat`**
 * 🍎 **On Mac:** Double-click **`Run_Mac.command`**
 
 > [!NOTE]
-> **First-Time Launch Note:** On the very first run, the launcher will take about 1–2 minutes to create the private environment and download the Whisper AI speech model. Subsequent launches open in seconds and run **100% offline** without needing an internet connection.
->
-> If Python 3 is not installed, the launcher will pop up a friendly native dialog with a 1-click button to download Python from [python.org](https://www.python.org/downloads/).
+> **Prerequisites & First-Time Launch:**
+> * **Python 3.10+ Required:** The application requires modern Python (3.10, 3.11, or 3.12). Legacy Python 3.9 and older are not supported.
+> * **Self-Healing Stale `.venv` Purging:** Both launchers inspect the virtual environment before launching. If an existing `.venv` was created with an outdated Python runtime (< 3.10) or corrupted interpreter, the launcher automatically purges the stale `.venv` and resets a fresh environment with a verified Python 3.10+ interpreter.
+> * **1-Click Official Installer Bootstrapping:**
+>   * **On macOS:** macOS ships an outdated Python 3.9 stub by default. If Python 3.10+ is missing, `Run_Mac.command` displays an AppleScript alert with a 1-click **"Install Python"** button that automatically downloads the official Python 3.12 installer package (`python-3.12.10-macos11.pkg`) and launches it directly on your screen.
+>   * **On Windows:** `Run_Windows.bat` checks system PATH, the `py` launcher, and local user/system directories for Python 3.10–3.13. If missing, it displays a native Windows dialog offering 1-click navigation to [python.org](https://www.python.org/downloads/).
+> * **First-Time Setup:** On the very first run, creating the private environment and downloading the Whisper AI speech model takes about 1–2 minutes. Subsequent launches open in seconds and run **100% offline** without needing an internet connection.
 
 #### 🛡️ macOS Security Tip (If Mac Asks on First Launch)
 * If macOS displays *"Cannot be opened because it is from an unidentified developer"*:  
@@ -251,7 +255,7 @@ The repository includes an extensive automated test suite covering all critical 
 # Activate your virtual environment, then run:
 python test_app.py
 ```
-*(All 59 automated unit and integration tests execute in under 6 seconds).*
+*(All 65 automated unit and integration tests, including launcher script invariants, execute in under 6 seconds).*
 
 ### Building Standalone macOS App & DMG
 If you want to create a native macOS drag-and-drop installer:
@@ -304,7 +308,7 @@ TranscriptionEngine/
 │   ├── utils/                  # 🛠️ System utilities & zero-sudo macOS application installer
 │   └── ui/                     # 🌸 CustomTkinter presentation layer (views, dialogs, menus, dock)
 ├── requirements.txt            # 📦 Production Python dependencies
-├── test_app.py                 # 🧪 Automated unit & integration test suite (41 tests)
+├── test_app.py                 # 🧪 Automated unit & integration test suite (65 tests)
 ├── Run_Windows.bat             # 🪟 1-Click self-healing Windows launcher
 ├── Run_Mac.command             # 🍎 1-Click self-healing macOS launcher & auto-installer to Applications
 ├── Build_Mac_App.command       # 🍏 1-Click standalone .app bundle builder

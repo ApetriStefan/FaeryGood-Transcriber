@@ -19,7 +19,7 @@ This directory defines key engineering, delivery, and verification workflows.
   ```bash
   python -m unittest test_app.py
   ```
-- Verify all 41 test cases pass without regressions.
+- Verify all 65 test cases pass without regressions.
 - Verify GUI launches cleanly without unhandled console exceptions.
 
 ### 3. Scratch Hygiene Assurance Workflow

@@ -1771,6 +1771,132 @@ class TestCrashLoggerAndTaskETA(unittest.TestCase):
                 app.destroy()
 
 
+class TestLauncherScripts(unittest.TestCase):
+    """
+    Verifies launcher script invariants for macOS (Run_Mac.command)
+    and Windows (Run_Windows.bat), ensuring Python >= 3.10 enforcement,
+    stale virtual environment auto-reset, and seamless installer flows.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.repo_root = Path(__file__).parent
+        cls.mac_script = cls.repo_root / "Run_Mac.command"
+        cls.win_script = cls.repo_root / "Run_Windows.bat"
+
+    def test_run_mac_script_exists_and_invariants(self):
+        self.assertTrue(self.mac_script.exists(), "Run_Mac.command must exist")
+        content = self.mac_script.read_text(encoding="utf-8")
+
+        # 1. is_valid_python function definition
+        self.assertIn("is_valid_python()", content)
+        self.assertIn("sys.version_info >= (3, 10)", content)
+
+        # 2. Prioritized Python candidate paths
+        expected_candidates = [
+            "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3",
+            "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3",
+            "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3",
+            "/Library/Frameworks/Python.framework/Versions/3.10/bin/python3",
+            "/usr/local/bin/python3.13",
+            "/usr/local/bin/python3.12",
+            "/usr/local/bin/python3.11",
+            "/usr/local/bin/python3.10",
+            "/opt/homebrew/bin/python3.13",
+            "/opt/homebrew/bin/python3.12",
+            "/opt/homebrew/bin/python3.11",
+            "/opt/homebrew/bin/python3.10",
+            ".pyenv/shims/python3",
+            "miniforge3/bin/python3",
+            "miniconda3/bin/python3",
+            "which python3.13",
+            "which python3.12",
+            "which python3.11",
+            "which python3.10",
+        ]
+        for cand in expected_candidates:
+            self.assertIn(cand, content, f"Missing expected candidate: {cand}")
+
+        # 3. Candidate evaluation loop must invoke is_valid_python
+        self.assertIn('if is_valid_python "$cmd"; then', content)
+
+    def test_run_mac_stale_venv_reset_logic(self):
+        content = self.mac_script.read_text(encoding="utf-8")
+
+        # Must verify .venv/bin/python and remove stale .venv
+        self.assertIn('if [ -d ".venv" ]; then', content)
+        self.assertIn('! is_valid_python ".venv/bin/python"', content)
+        self.assertIn('rm -rf ".venv"', content)
+
+    def test_run_mac_frictionless_installer_flow(self):
+        content = self.mac_script.read_text(encoding="utf-8")
+
+        # Verify friendly AppleScript prompt and download target
+        self.assertIn("Python 3.12 Required", content)
+        self.assertIn("Apple's older built-in Python 3.9", content)
+        self.assertIn("https://www.python.org/ftp/python/3.12.10/python-3.12.10-macos11.pkg", content)
+        self.assertIn("/tmp/python-3.12.10-macos11.pkg", content)
+        self.assertIn("https://www.python.org/downloads/macos/", content)
+        self.assertIn('open "$PKG_PATH"', content)
+        self.assertIn("Python 3.12 Installer Started", content)
+
+    def test_run_windows_script_exists_and_invariants(self):
+        self.assertTrue(self.win_script.exists(), "Run_Windows.bat must exist")
+        content = self.win_script.read_text(encoding="utf-8")
+
+        # 1. Enforce sys.version_info >= (3, 10) in PATH and py launcher
+        self.assertIn("sys.version_info >= (3, 10)", content)
+        self.assertNotIn("sys.version_info.major == 3", content)
+
+        # 2. Candidate scans must only search 313, 312, 311, 310 (39 and 38 removed)
+        self.assertIn("(313 312 311 310)", content)
+        self.assertNotIn("39 38", content)
+
+        # 3. Stale virtual environment detection & reset
+        self.assertIn('rmdir /s /q ".venv"', content)
+
+        # 4. Prompt specifies Python 3.10+
+        self.assertIn("Python 3.10 or newer", content)
+        self.assertIn("Python 3.10+ Required", content)
+
+    def test_python_version_comparison_logic(self):
+        """Validates that sys.version_info >= (3, 10) correctly categorizes Python versions."""
+        def check_version(v_tuple):
+            return v_tuple >= (3, 10)
+
+        # Outdated / EOL versions that should be rejected
+        self.assertFalse(check_version((2, 7, 18)))
+        self.assertFalse(check_version((3, 7, 17)))
+        self.assertFalse(check_version((3, 8, 18)))
+        self.assertFalse(check_version((3, 9, 6)))   # macOS Sonoma default Xcode stub
+        self.assertFalse(check_version((3, 9, 18)))
+
+        # Supported versions (Python 3.10+)
+        self.assertTrue(check_version((3, 10, 0)))
+        self.assertTrue(check_version((3, 10, 13)))
+        self.assertTrue(check_version((3, 11, 0)))
+        self.assertTrue(check_version((3, 11, 8)))
+        self.assertTrue(check_version((3, 12, 0)))
+        self.assertTrue(check_version((3, 12, 10)))
+        self.assertTrue(check_version((3, 13, 0)))
+
+    def test_stale_venv_detection_simulation(self):
+        """Simulates checking a virtual environment interpreter's version tuple."""
+        with tempfile.TemporaryDirectory() as td:
+            venv_dir = Path(td) / ".venv"
+            venv_dir.mkdir()
+
+            def evaluate_venv_staleness(version_tuple):
+                is_valid = version_tuple >= (3, 10)
+                if not is_valid:
+                    return "RESET"
+                return "KEEP"
+
+            self.assertEqual(evaluate_venv_staleness((3, 9, 6)), "RESET")
+            self.assertEqual(evaluate_venv_staleness((3, 8, 10)), "RESET")
+            self.assertEqual(evaluate_venv_staleness((3, 12, 2)), "KEEP")
+
+
 if __name__ == "__main__":
     unittest.main()
 

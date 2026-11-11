@@ -22,7 +22,11 @@ Everything runs **100% privately on your own computer**—no cloud uploads, no m
 
 > **A Quick First-Launch Note:** On your very first run, the app prepares its private Python environment and speech recognition model. This only takes about a minute. After that, launches are near-instant!
 > *(If your Mac shows a security prompt on the first double-click, simply right-click `Run_Mac.command` and choose **Open**).*
-> If Python 3 isn't installed yet, a friendly window will pop up with a 1-click button to download it.
+>
+> 🐍 **Modern Python (3.10, 3.11, or 3.12) Requirement:**  
+> The app requires a modern version of Python (3.10, 3.11, or 3.12).  
+> * **On Mac:** macOS comes with an older built-in Python 3.9 stub that is out of date. If modern Python isn't detected, `Run_Mac.command` will automatically pop up a friendly window with a 1-click **"Install Python"** button. Clicking it automatically downloads and opens the official Python 3.12 installer directly on your screen!
+> * **On Windows:** If Python 3.10+ isn't detected yet, `Run_Windows.bat` will display a friendly dialog offering a 1-click button to open the official Python download page (be sure to check the box *"Add python.exe to PATH"* during installation).
 
 ---
 
