@@ -2047,6 +2047,32 @@ class TestLauncherScripts(unittest.TestCase):
             self.assertEqual(evaluate_venv_staleness((3, 8, 10)), "RESET")
             self.assertEqual(evaluate_venv_staleness((3, 12, 2)), "KEEP")
 
+    def test_prepare_audio_input_bypasses_pyav(self):
+        """Verifies 16kHz mono PCM WAV files decode directly to float32 numpy arrays without PyAV."""
+        import wave
+        import numpy as np
+        from app import TranscriptionEngine
+
+        with tempfile.TemporaryDirectory() as td:
+            wav_path = Path(td) / "test_16k.wav"
+            with wave.open(str(wav_path), "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(16000)
+                samples = np.array([0, 16384, -16384, 32767], dtype="<i2")
+                wf.writeframes(samples.tobytes())
+
+            arr = TranscriptionEngine._prepare_audio_input(wav_path)
+            self.assertIsInstance(arr, np.ndarray)
+            self.assertEqual(arr.dtype, np.float32)
+            self.assertEqual(len(arr), 4)
+            self.assertAlmostEqual(float(arr[1]), 0.5, places=4)
+            self.assertAlmostEqual(float(arr[2]), -0.5, places=4)
+
+            # Non-existent path falls back gracefully to string path
+            missing = Path(td) / "missing.wav"
+            self.assertEqual(TranscriptionEngine._prepare_audio_input(missing), str(missing))
+
 
 if __name__ == "__main__":
     unittest.main()

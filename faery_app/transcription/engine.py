@@ -107,6 +107,29 @@ class TranscriptionEngine:
         except Exception:
             return False
 
+    @staticmethod
+    def _prepare_audio_input(wav_path: Path):
+        """
+        Decodes 16kHz mono 16-bit PCM WAV directly into a normalized float32 NumPy array
+        using stdlib wave + numpy. Bypasses faster-whisper's internal PyAV av.open() decoder,
+        preventing compatibility errors with PyAV >= 18 ('metadata_errors' removal).
+        Falls back to str(wav_path) if missing or non-standard PCM format.
+        """
+        try:
+            if not wav_path.exists():
+                return str(wav_path)
+            import wave
+            import numpy as np
+
+            with wave.open(str(wav_path), "rb") as wf:
+                if wf.getnchannels() == 1 and wf.getsampwidth() == 2 and wf.getframerate() == 16000:
+                    frames = wf.readframes(wf.getnframes())
+                    if frames:
+                        return np.frombuffer(frames, dtype="<i2").astype(np.float32) / 32768.0
+        except Exception:
+            pass
+        return str(wav_path)
+
     def get_model(self, model_size_or_path: str, status_cb: Callable[[str], None]) -> WhisperModel:
         """Retrieves or loads the requested faster-whisper model strictly configured for CPU."""
         global WhisperModel
@@ -195,10 +218,11 @@ class TranscriptionEngine:
             tea_hint = " ☕ (time for tea!)" if initial_eta >= 120 else ""
             status_cb(f"Transcribing audio: 0% · ~{format_eta(initial_eta)} remaining{tea_hint}...")
 
+            audio_input = self._prepare_audio_input(scratch_wav)
             t_start = time.monotonic()
             with prevent_app_nap():
                 segments_gen, info = whisper_model.transcribe(
-                    str(scratch_wav),
+                    audio_input,
                     language="en",
                     vad_filter=True,
                     vad_parameters=dict(min_silence_duration_ms=500),
@@ -363,10 +387,11 @@ class TranscriptionEngine:
             tea_hint = " ☕ (time for tea!)" if initial_eta >= 120 else ""
             status_cb(f"Transcribing audio: 0% · ~{format_eta(initial_eta)} remaining{tea_hint}...")
 
+            audio_input = self._prepare_audio_input(scratch_wav)
             t_start = time.monotonic()
             with prevent_app_nap():
                 segments_gen, info = whisper_model.transcribe(
-                    str(scratch_wav),
+                    audio_input,
                     language="en",
                     vad_filter=True,
                     vad_parameters=dict(min_silence_duration_ms=500),
