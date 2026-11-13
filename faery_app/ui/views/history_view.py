@@ -48,6 +48,7 @@ class HistoryLibraryView:
             border_color=FAERY_CARD_BORDER,
         )
         left_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+        left_panel.grid_propagate(False)
         left_panel.grid_columnconfigure(0, weight=1)
         left_panel.grid_rowconfigure(2, weight=1)
 
@@ -155,6 +156,8 @@ class HistoryLibraryView:
             font=app.font_serif_title,
             text_color=FAERY_TEXT_PRIMARY,
             anchor="w",
+            justify="left",
+            wraplength=460,
         )
         app.history_title_label.grid(row=0, column=0, sticky="w")
 
@@ -167,10 +170,10 @@ class HistoryLibraryView:
         )
         app.history_meta_label.grid(row=1, column=0, sticky="w", pady=(2, 0))
 
-        # Action Toolbar (CRUD Operations)
+        # Action Toolbar (Two responsive rows so pills never overflow at 900x700)
         crud_toolbar = ctk.CTkFrame(right_panel, fg_color="transparent")
         crud_toolbar.grid(row=1, column=0, sticky="ew", padx=20, pady=(4, 10))
-        crud_toolbar.grid_columnconfigure(1, weight=1)
+        crud_toolbar.grid_columnconfigure(0, weight=1)
 
         left_crud = ctk.CTkFrame(crud_toolbar, fg_color="transparent")
         left_crud.grid(row=0, column=0, sticky="w")
@@ -194,7 +197,7 @@ class HistoryLibraryView:
         app.history_view_selector.pack(side="left", padx=(0, 10))
 
         right_crud = ctk.CTkFrame(crud_toolbar, fg_color="transparent")
-        right_crud.grid(row=0, column=1, sticky="e")
+        right_crud.grid(row=1, column=0, sticky="w", pady=(6, 0))
 
         app.h_rename_btn = ctk.CTkButton(
             right_crud,
@@ -295,3 +298,4 @@ class HistoryLibraryView:
             text_color=FAERY_TEXT_PRIMARY,
         )
         app.history_textbox.grid(row=3, column=0, sticky="nsew", padx=16, pady=(6, 14))
+        app.history_textbox.bind("<KeyRelease>", app._on_history_text_modified)

@@ -61,6 +61,7 @@ class RadioStationController:
         self._pending_song: Optional[Tuple[Path, str, str]] = None
         self._duration_cache: Dict[str, float] = {}
         self._mixer_initialized: bool = False
+        self._consecutive_failures: int = 0
 
         self.rescan_audio_assets()
 
@@ -69,10 +70,11 @@ class RadioStationController:
         music_d = get_music_dir()
         announcer_d = get_announcer_dir()
 
-        # 1. Music files
+        # 1. Music files (only formats reliably supported by SDL_mixer across macOS/Windows)
+        supported_exts = (".mp3", ".wav", ".ogg")
         if music_d.exists() and music_d.is_dir():
             self.music_files = sorted(
-                [p for p in music_d.glob("*") if p.suffix.lower() in [".mp3", ".wav", ".m4a", ".ogg"]],
+                [p for p in music_d.glob("*") if p.suffix.lower() in supported_exts],
                 key=lambda p: p.name.lower(),
             )
         else:
@@ -82,7 +84,7 @@ class RadioStationController:
         all_announcers: List[Path] = []
         if announcer_d.exists() and announcer_d.is_dir():
             all_announcers = sorted(
-                [p for p in announcer_d.glob("*") if p.suffix.lower() in [".mp3", ".wav", ".m4a", ".ogg"]],
+                [p for p in announcer_d.glob("*") if p.suffix.lower() in supported_exts],
                 key=lambda p: p.name.lower(),
             )
 
@@ -175,9 +177,11 @@ class RadioStationController:
             self.current_start_time = time.time()
             self.is_paused = False
             self.is_playing = True
+            self._consecutive_failures = 0
             return True
         except Exception as err:
             print(f"[Faery Radio] Error playing '{path.name}': {err}", file=sys.stderr)
+            self._consecutive_failures += 1
             return False
 
     def seek_to(self, target_seconds: float) -> bool:
@@ -279,16 +283,19 @@ class RadioStationController:
         self._prepare_and_play_song(first_song)
 
     def stop(self) -> None:
-        """Stops radio playback and releases audio output."""
+        """Stops radio playback and releases audio output and open file handles."""
         try:
             import pygame
             if pygame.mixer.get_init():
                 pygame.mixer.music.stop()
+                if hasattr(pygame.mixer.music, "unload"):
+                    pygame.mixer.music.unload()
         except Exception:
             pass
         self.is_playing = False
         self.is_paused = False
         self._pending_song = None
+        self._consecutive_failures = 0
 
     def toggle_play_pause(self) -> None:
         """Toggles between playing and paused state."""
@@ -392,6 +399,12 @@ class RadioStationController:
             busy = False
 
         if not busy:
+            # Guard against infinite failure loops if audio files or mixer fail to play
+            max_retries = max(1, min(len(self.music_files) or 1, 3))
+            if self._consecutive_failures >= max_retries:
+                self.stop()
+                return
+
             # Current track has finished!
             if self.current_track_type == RadioTrackType.GRIFT:
                 # Grift bumper finished -> immediately start the pending song
@@ -406,6 +419,9 @@ class RadioStationController:
                 # Announcer interlude finished -> transition towards next song (checking Grift bumper)
                 if not self.songs_playlist or self.current_song_idx >= len(self.songs_playlist):
                     self._reshuffle_songs()
+                if not self.songs_playlist:
+                    self.stop()
+                    return
                 next_song = self.songs_playlist[self.current_song_idx]
                 self.current_song_idx += 1
                 self._prepare_and_play_song(next_song)
@@ -414,7 +430,8 @@ class RadioStationController:
                 # Song finished -> play an announcer interlude (Liability or DJ clip)
                 ann_path, ann_type, ann_title, ann_sub = self._pick_next_announcer()
                 if ann_path:
-                    self._play_file(ann_path, ann_type, ann_title, ann_sub)
+                    if not self._play_file(ann_path, ann_type, ann_title, ann_sub):
+                        self.next_song()
                 else:
                     self.next_song()
 

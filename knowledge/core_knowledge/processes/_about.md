@@ -19,7 +19,7 @@ This directory defines key engineering, delivery, and verification workflows.
   ```bash
   python -m unittest test_app.py
   ```
-- Verify all 71 test cases pass without regressions.
+- Verify all 80 test cases pass without regressions.
 - Verify GUI launches cleanly without unhandled console exceptions.
 
 ### 3. Scratch Hygiene Assurance Workflow
@@ -30,6 +30,6 @@ This directory defines key engineering, delivery, and verification workflows.
   - Startup sweeper: orphaned folders matching `faery_transcribe_*` and `faery_mic_*` and stale Hugging Face cache fragments are cleaned on app boot.
 
 ### 4. Release & Standalone Packaging Workflow
-- On macOS: Execute `Build_Mac_App.command` followed by `Create_Mac_DMG.command`.
+- On macOS: Execute `Build_Mac_App.command` (which validates Python >= 3.10, builds `Faery Good Transcriber.app` via `FaeryTranscriber.spec`, and ad-hoc signs with `macos_entitlements.plist`) followed by `Create_Mac_DMG.command`.
 - On Windows: Run PyInstaller with `FaeryTranscriber.spec`.
 - Verify standalone bundle bypass in `AutoUpdater` (`sys.frozen == True`).

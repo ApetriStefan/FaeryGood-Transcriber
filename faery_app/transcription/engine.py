@@ -130,6 +130,20 @@ class TranscriptionEngine:
             pass
         return str(wav_path)
 
+    @staticmethod
+    def _validate_non_silent_audio(audio_input) -> None:
+        """Raises ValueError if an already-decoded NumPy waveform contains only digital zeros."""
+        try:
+            import numpy as np
+
+            if isinstance(audio_input, np.ndarray):
+                if audio_input.size == 0 or float(np.abs(audio_input).max()) == 0.0:
+                    raise ValueError(
+                        "No audio signal was detected — the audio track contains pure silence."
+                    )
+        except ImportError:
+            pass
+
     def get_model(self, model_size_or_path: str, status_cb: Callable[[str], None]) -> WhisperModel:
         """Retrieves or loads the requested faster-whisper model strictly configured for CPU."""
         global WhisperModel
@@ -219,6 +233,7 @@ class TranscriptionEngine:
             status_cb(f"Transcribing audio: 0% · ~{format_eta(initial_eta)} remaining{tea_hint}...")
 
             audio_input = self._prepare_audio_input(scratch_wav)
+            self._validate_non_silent_audio(audio_input)
             t_start = time.monotonic()
             with prevent_app_nap():
                 segments_gen, info = whisper_model.transcribe(
@@ -260,7 +275,7 @@ class TranscriptionEngine:
                             f"({int(progress * 100)}%) · ~{format_eta(eta_sec)} remaining{tea_hint}"
                         )
 
-                if total_duration >= 10.0:
+                if total_duration >= 10.0 and segments_collected:
                     observed_rtf = (time.monotonic() - t_start) / total_duration
                     self.config_manager.update_model_rtf(model_name, observed_rtf)
 
@@ -388,6 +403,7 @@ class TranscriptionEngine:
             status_cb(f"Transcribing audio: 0% · ~{format_eta(initial_eta)} remaining{tea_hint}...")
 
             audio_input = self._prepare_audio_input(scratch_wav)
+            self._validate_non_silent_audio(audio_input)
             t_start = time.monotonic()
             with prevent_app_nap():
                 segments_gen, info = whisper_model.transcribe(
@@ -429,7 +445,7 @@ class TranscriptionEngine:
                             f"({int(progress * 100)}%) · ~{format_eta(eta_sec)} remaining{tea_hint}"
                         )
 
-                if total_duration >= 10.0:
+                if total_duration >= 10.0 and segments_collected:
                     observed_rtf = (time.monotonic() - t_start) / total_duration
                     self.config_manager.update_model_rtf(model_name, observed_rtf)
 

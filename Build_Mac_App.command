@@ -11,10 +11,37 @@ echo "=================================================="
 echo " 🛠️ Building Standalone FaeryTranscriber.app..."
 echo "=================================================="
 
-# Ensure virtual environment is ready
+# Detect Python >= 3.10
+PYTHON_CMD=""
+for cmd in \
+    "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3" \
+    "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3" \
+    "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3" \
+    "/Library/Frameworks/Python.framework/Versions/3.10/bin/python3" \
+    "/usr/local/bin/python3" \
+    "/opt/homebrew/bin/python3" \
+    "$(which python3 2>/dev/null)"; do
+    if [ -x "$cmd" ] && "$cmd" -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" 2>/dev/null; then
+        PYTHON_CMD="$cmd"
+        break
+    fi
+done
+
+if [ -z "$PYTHON_CMD" ]; then
+    echo "❌ Python 3.10 or newer is required to build the standalone app."
+    read -p "Press Enter to exit..."
+    exit 1
+fi
+
+# Ensure virtual environment is ready and compatible
+if [ -d ".venv" ] && ! .venv/bin/python -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" 2>/dev/null; then
+    echo "⚠️ Resetting incompatible .venv..."
+    rm -rf ".venv"
+fi
+
 if [ ! -d ".venv" ]; then
     echo "📦 Initializing virtual environment..."
-    python3 -m venv .venv
+    "$PYTHON_CMD" -m venv .venv
 fi
 
 source .venv/bin/activate
@@ -36,6 +63,16 @@ if [ -d "$APP_PATH" ]; then
 
     # Ensure executable bit is set
     chmod +x "$APP_PATH"/Contents/MacOS/* 2>/dev/null || true
+
+    # Ad-hoc codesign with microphone entitlement for macOS TCC stability
+    if command -v codesign >/dev/null 2>&1; then
+        echo "🔐 Signing application bundle with microphone entitlement..."
+        if [ -f "macos_entitlements.plist" ]; then
+            codesign --force --deep --sign - --entitlements "macos_entitlements.plist" "$APP_PATH" 2>/dev/null || true
+        else
+            codesign --force --deep --sign - "$APP_PATH" 2>/dev/null || true
+        fi
+    fi
 
     echo "=================================================="
     echo " ✅ SUCCESS! Standalone Mac App built at:"

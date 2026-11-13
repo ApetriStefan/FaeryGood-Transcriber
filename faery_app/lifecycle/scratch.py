@@ -31,14 +31,64 @@ class ScratchLifecycleManager:
     """
 
     _active_scratch_dirs: set[Path] = set()
+    _cleanup_callbacks: list = []
     _lock = threading.Lock()
     _initialized = False
 
     @classmethod
-    def register_dir(cls, path: Path) -> None:
-        """Tracks an active scratch directory for failsafe cleanup."""
+    def register_cleanup_callback(cls, callback) -> None:
+        """Registers a callable invoked right before active scratch directories are purged."""
         with cls._lock:
-            cls._active_scratch_dirs.add(path.resolve())
+            if callback not in cls._cleanup_callbacks:
+                cls._cleanup_callbacks.append(callback)
+
+    @classmethod
+    def _is_pid_running(cls, pid: int) -> bool:
+        """Checks whether a process ID is currently alive on POSIX or Windows."""
+        if pid <= 0:
+            return False
+        if pid == os.getpid():
+            return True
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                kernel32 = ctypes.windll.kernel32
+                SYNCHRONIZE = 0x00100000
+                PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+                handle = kernel32.OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+                if not handle:
+                    return False
+                try:
+                    exit_code = ctypes.c_ulong()
+                    STILL_ACTIVE = 259
+                    if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                        return exit_code.value == STILL_ACTIVE
+                    return True
+                finally:
+                    kernel32.CloseHandle(handle)
+            except Exception:
+                return False
+        else:
+            try:
+                os.kill(pid, 0)
+                return True
+            except ProcessLookupError:
+                return False
+            except PermissionError:
+                return True
+            except Exception:
+                return False
+
+    @classmethod
+    def register_dir(cls, path: Path) -> None:
+        """Tracks an active scratch directory and writes a PID marker for orphan safety."""
+        resolved = path.resolve()
+        with cls._lock:
+            cls._active_scratch_dirs.add(resolved)
+        try:
+            (resolved / ".faery.pid").write_text(str(os.getpid()), encoding="utf-8")
+        except Exception:
+            pass
 
     @classmethod
     def unregister_dir(cls, path: Path) -> None:
@@ -89,10 +139,16 @@ class ScratchLifecycleManager:
 
     @classmethod
     def cleanup_all_active(cls) -> None:
-        """Silently and immediately purges all active scratch directories."""
+        """Silently and immediately closes registered handles and purges all active scratch directories."""
         with cls._lock:
+            callbacks = list(cls._cleanup_callbacks)
             active_list = list(cls._active_scratch_dirs)
             cls._active_scratch_dirs.clear()
+        for cb in callbacks:
+            try:
+                cb()
+            except Exception:
+                pass
         for p in active_list:
             cls.safe_remove_tree(p)
 
@@ -108,8 +164,17 @@ class ScratchLifecycleManager:
             temp_root = Path(tempfile.gettempdir())
             for prefix in ("faery_transcribe_*", "faery_scratch_*", "faery_mic_*"):
                 for item in temp_root.glob(prefix):
-                    if item.is_dir() and item.resolve() not in cls._active_scratch_dirs:
-                        cls.safe_remove_tree(item)
+                    if not item.is_dir() or item.resolve() in cls._active_scratch_dirs:
+                        continue
+                    pid_file = item / ".faery.pid"
+                    if pid_file.exists():
+                        try:
+                            pid_val = int(pid_file.read_text(encoding="utf-8").strip())
+                            if cls._is_pid_running(pid_val):
+                                continue
+                        except Exception:
+                            pass
+                    cls.safe_remove_tree(item)
         except Exception:
             pass
 

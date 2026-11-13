@@ -33,9 +33,18 @@ class AboutDialog(ctk.CTkToplevel):
         super().__init__(parent)
         self.parent_app = parent
         self.title(f"About {APP_NAME}")
-        self.geometry("500x440")
+        width, height = 510, 450
+        self.geometry(f"{width}x{height}")
         self.resizable(False, False)
-        self.attributes("-topmost", True)
+        self.transient(parent)
+        try:
+            px = parent.winfo_rootx() + (parent.winfo_width() - width) // 2
+            py = parent.winfo_rooty() + (parent.winfo_height() - height) // 2
+            self.geometry(f"{width}x{height}+{max(0, px)}+{max(0, py)}")
+        except Exception:
+            pass
+        self.lift()
+        self.focus_set()
         self.configure(fg_color=FAERY_BG)
         if hasattr(parent, "brand"):
             parent.brand.apply_window_icon(self)
@@ -83,6 +92,8 @@ class AboutDialog(ctk.CTkToplevel):
             font=getattr(parent, "font_serif_italic", ctk.CTkFont(family="Georgia", size=12, slant="italic")),
             text_color=FAERY_TEXT_MUTED,
             anchor="w",
+            wraplength=360,
+            justify="left",
         )
         sub.pack(anchor="w")
 
@@ -90,8 +101,8 @@ class AboutDialog(ctk.CTkToplevel):
             "Custom-Crafted Desktop Video & Audio Transcriber for Ericka & Faery Good\n\n"
             "• Brand & Art Direction: Inspired by FaeryGood.com\n"
             "• AI Engine: faster-whisper (CTranslate2 int8 CPU, 4 threads)\n"
-            "• Language: Optimized for English speech (small.en & base.en)\n"
-            "• Target Systems: macOS Sonoma (Intel x86_64) & Windows 11\n"
+            "• Models: large-v3-turbo (Best Punctuation), small.en & base.en\n"
+            "• Target Systems: macOS (Apple Silicon & Intel) & Windows 11\n"
             "• Audio Extraction: Bundled static FFmpeg (Zero external setup)\n"
             "• Hygiene Guarantee: 100% automatic cleanup of temporary audio files\n"
             "• Privacy: 100% offline, on-device transcription\n\n"
@@ -104,6 +115,7 @@ class AboutDialog(ctk.CTkToplevel):
             font=getattr(parent, "font_body", ctk.CTkFont(size=12)),
             text_color=FAERY_TEXT_PRIMARY,
             justify="left",
+            wraplength=440,
         )
         lbl.pack(anchor="w", padx=18, pady=8)
 

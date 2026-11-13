@@ -15,6 +15,7 @@ import re
 import sqlite3
 import sys
 import time
+import uuid
 from typing import Iterator, List, Optional, Tuple, Union
 
 from faery_app.constants import DB_FILE_NAME, DB_PATH, HISTORY_FILE_NAME, HISTORY_PATH
@@ -555,15 +556,24 @@ class HistoryManager:
         new_t = parent_dir / f"{new_title}_timecoded.txt"
         new_m = parent_dir / f"{new_title}_transcript.md"
 
+        rename_pairs: List[Tuple[Path, Path]] = []
+        for old_f, new_f in ((old_p, new_p), (old_t, new_t), (old_m, new_m)):
+            if old_f and old_f.exists() and old_f != new_f:
+                if new_f.exists():
+                    raise IOError(f"Destination file '{new_f.name}' already exists.")
+                rename_pairs.append((old_f, new_f))
+
+        moved_pairs: List[Tuple[Path, Path]] = []
         try:
-            if old_p and old_p.exists():
-                old_p.rename(new_p)
+            for src_f, dst_f in rename_pairs:
+                src_f.rename(dst_f)
+                moved_pairs.append((dst_f, src_f))
+
+            if old_p and old_p.exists() or any(d == new_p for _, d in rename_pairs):
                 rec.paragraphs_file = str(new_p)
-            if old_t and old_t.exists():
-                old_t.rename(new_t)
+            if old_t and old_t.exists() or any(d == new_t for _, d in rename_pairs):
                 rec.timecoded_file = str(new_t)
-            if old_m and old_m.exists():
-                old_m.rename(new_m)
+            if old_m and old_m.exists() or any(d == new_m for _, d in rename_pairs):
                 rec.markdown_file = str(new_m)
 
             rec.title = new_title
@@ -598,11 +608,24 @@ class HistoryManager:
                     break
             return rec
         except Exception as err:
+            # Roll back file renames if SQLite update or later rename fails
+            for dst_f, src_f in reversed(moved_pairs):
+                try:
+                    if dst_f.exists() and not src_f.exists():
+                        dst_f.rename(src_f)
+                except Exception:
+                    pass
             raise IOError(f"Could not rename files: {err}")
 
     def sync_with_directory(self, output_dir: Path) -> List[HistoryRecord]:
         """Scans output_dir, auto-discovers external or older transcripts, and purges missing files."""
-        if not output_dir or not output_dir.exists():
+        if not output_dir or not output_dir.exists() or not output_dir.is_dir():
+            return self.records
+
+        try:
+            list(output_dir.iterdir())
+        except OSError:
+            # Directory unreadable/unmounted — never destructively wipe DB records
             return self.records
 
         discovered_stems = set()
@@ -632,7 +655,7 @@ class HistoryManager:
                 ).strftime("%Y-%m-%d %H:%M")
 
                 new_rec = HistoryRecord(
-                    id=f"{stem}_{int(time.time())}",
+                    id=f"{stem}_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}",
                     title=stem,
                     source_filename=f"{stem}.mp4",
                     duration_str="--:--",
@@ -645,13 +668,16 @@ class HistoryManager:
                 )
                 new_records.append(new_rec)
 
-        # Remove records where all associated files no longer exist on disk
+        # Remove records only if their parent directory is accessible and all associated files are gone
         to_delete: List[str] = []
         for r in self.records:
-            has_p = bool(r.paragraphs_file and os.path.exists(r.paragraphs_file))
-            has_t = bool(r.timecoded_file and os.path.exists(r.timecoded_file))
-            has_m = bool(r.markdown_file and os.path.exists(r.markdown_file))
-            if not (has_p or has_t or has_m):
+            file_paths = [Path(p) for p in (r.paragraphs_file, r.timecoded_file, r.markdown_file) if p]
+            if not file_paths:
+                continue
+            # Only prune if at least one parent directory exists and is readable (avoid unmounted drive wipe)
+            if not any(fp.parent.exists() and os.access(fp.parent, os.R_OK) for fp in file_paths):
+                continue
+            if not any(fp.exists() for fp in file_paths):
                 to_delete.append(r.id)
 
         if not new_records and not to_delete:
@@ -688,7 +714,18 @@ class HistoryManager:
 
         try:
             with self._connection() as conn:
-                query_sql = """
+                # Require every query token to match either via FTS content or metadata LIKE columns
+                like_clauses = []
+                params: list = [fts_q]
+                for tok in tokens:
+                    like_clauses.append(
+                        "(t.title LIKE ? OR t.source_filename LIKE ? OR t.model LIKE ? OR t.created_at LIKE ? OR t.tags LIKE ?)"
+                    )
+                    lp = f"%{tok}%"
+                    params.extend([lp, lp, lp, lp, lp])
+                meta_all_tokens_sql = " AND ".join(like_clauses)
+
+                query_sql = f"""
                     SELECT 
                         t.*, 
                         fts.snip AS fts_snippet,
@@ -702,19 +739,10 @@ class HistoryManager:
                         FROM transcriptions_fts
                         WHERE transcriptions_fts MATCH ?
                     ) fts ON t.id = fts.id
-                    WHERE fts.id IS NOT NULL
-                       OR t.title LIKE ?
-                       OR t.source_filename LIKE ?
-                       OR t.model LIKE ?
-                       OR t.created_at LIKE ?
-                       OR t.tags LIKE ?
+                    WHERE fts.id IS NOT NULL OR ({meta_all_tokens_sql})
                     ORDER BY t.is_favorite DESC, (fts.rank IS NOT NULL) DESC, fts.rank ASC, t.created_at DESC;
                 """
-                like_param = f"%{tokens[0]}%"
-                rows = conn.execute(
-                    query_sql,
-                    (fts_q, like_param, like_param, like_param, like_param, like_param),
-                ).fetchall()
+                rows = conn.execute(query_sql, tuple(params)).fetchall()
 
                 results: List[SearchResult] = []
                 for row in rows:

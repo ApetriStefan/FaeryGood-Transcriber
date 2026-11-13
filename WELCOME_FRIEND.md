@@ -33,8 +33,9 @@ Everything runs **100% privately on your own computer**—no cloud uploads, no m
 ### 2. Pick Your Audio, Video, or Social Link
 Choose whichever is easiest for you:
 
-* **📁 From Your Computer:** Click **`📁 Choose Audio or Video…`** (or press `Ctrl+O` on Windows / `⌘O` on Mac). You can drop in voice memos, podcast tracks, phone videos, or Zoom recordings (`.mp4`, `.mov`, `.m4a`, `.mp3`, `.wav`).
-* **🎙️ Record Your Microphone:** Click **`🎙️ Record Mic`** (or press `Ctrl+D` / `⌘D`) to record voice notes directly in the app.
+* **📁 From Your Computer:** Click **`📁 Select Local File…`** (or press `Ctrl+O` on Windows / `⌘O` on Mac). You can drop in voice memos, podcast tracks, phone videos, or Zoom recordings (`.mp4`, `.mov`, `.m4a`, `.mp3`, `.wav`).
+* **🎙️ Record Your Microphone:** Click **`🎙️ Record Mic`** (or press `Ctrl+D` / `⌘D`) to record voice notes directly in the app. You'll see a live audio level bar react to your voice as you speak.
+  > *(First time using Mic on Mac? Click **Allow** if macOS asks for Microphone access — or turn on **Faery Good Transcriber** in **System Settings → Privacy & Security → Microphone**.)*
 * **🌐 From Social Media:** Copy any public link from **Instagram Reels, YouTube, TikTok, or Facebook**, then click **`📋 Paste Link`** (or press `Ctrl+L` / `⌘L`).
 
 > 🔒 **Privacy Guarantee on Links:** When transcribing from a web link, the app extracts the audio into a temporary private scratch area, transcribes it, and then **immediately deletes** the audio file the moment it finishes. Zero clutter is left behind on your disk!
@@ -76,7 +77,7 @@ At the top of the transcript studio, you can switch between three views with a s
 Every single transcript is automatically saved to your computer in:
 > **`Documents/Transcriptions/`**
 
-You never have to go digging through folders! Just click the **`📂 Open Folder`** button at the top of the app (or press `Ctrl+Shift+O` / `⇧⌘O`), and your transcript folder will open right in File Explorer (Windows) or Finder (Mac).
+You never have to go digging through folders! Just click the **`📂 Folder`** button in the studio bar (or press `Ctrl+Shift+O` / `⇧⌘O`), and your transcript folder will open right in File Explorer (Windows) or Finder (Mac).
 
 Each transcript is saved in both clean text (`.txt`) and formatted Markdown (`.md`).
 
@@ -84,11 +85,11 @@ Each transcript is saved in both clean text (`.txt`) and formatted Markdown (`.m
 
 ## 📜 The History Library
 
-Click the **`📜 History Library`** tab (or press `Ctrl+2` / `⌘2`) anytime to review past recordings:
+Click the **`📜 History`** tab (or press `Ctrl+2` / `⌘2`) anytime to review past recordings:
 
 * **🔍 Instant Search:** Type any word or phrase you remember speaking, and find the exact transcript in milliseconds.
-* **✏️ In-App Edits:** Fix a misspelled name or add notes directly in the app, then click **`Save Edits`**.
-* **📋 1-Click Copy:** Click **`Copy to Clipboard`** to paste your words into Word, Google Docs, Notion, or an email.
+* **✏️ In-App Edits:** Fix a misspelled name or add notes directly in the app, then click **`💾 Save Edits`**.
+* **📋 1-Click Copy:** Click **`📋 Copy to Clipboard`** (or press `⇧⌘C` / `Ctrl+Shift+C`) to paste your full transcript into Word, Google Docs, Notion, or an email. (`⌘C` / `Ctrl+C` copies whatever highlighted text you select.)
 
 ---
 
@@ -136,8 +137,9 @@ Your voice and words belong entirely to you:
 
 ## 💡 Quick Troubleshooting & Tips
 
+* **"My Mac mic recording finished immediately or recorded silence!"** Check **System Settings → Privacy & Security → Microphone** and ensure **Faery Good Transcriber** is toggled **ON** (and check that your Mac's input volume isn't muted in **System Settings → Sound → Input**). Watch the live signal bar under **🎙️ Record Mic** — it lights up green when your voice is coming through!
 * **"Can I change the appearance?"** Yes! Click the theme dropdown in the top-right corner to switch between **Light**, **Dark**, or **System** mode whenever you like.
-* **"How do I clear the text and start a new clip?"** Press `Ctrl+N` / `⌘N` (or click **`New`** in the menu).
+* **"How do I copy just one sentence vs. the whole transcript?"** Highlight any sentence and press `⌘C` / `Ctrl+C` as usual, or press **`⇧⌘C` / `Ctrl+Shift+C`** (or click **`📋 Copy to Clipboard`**) to copy the entire transcript!
 * **"What languages are supported?"** Faery Good Transcriber is specifically tuned and optimized for **English** speech across three models: **`Maximum Accuracy (large-v3-turbo - Best Punctuation)`** (the default, delivering publication-ready punctuation and sentence flow), **`High Accuracy (small.en - Fast)`**, and **`Standard Draft (base.en - Ultra Fast)`**.
 * **"Need a hand or ran into a glitch?"** Stef has you covered! Simply click **Help → 📋 Copy Diagnostic Log for Stef** in the top menu bar. This copies a private, zero-jargon diagnostic log directly to your clipboard so you can paste and send it right to Stef—without ever sharing your private recordings or spoken words.
 

@@ -20,7 +20,7 @@ A delightful, 100% private, on-device desktop transcription studio and historica
 ## ✨ Features at a Glance
 
 * **🔒 100% On-Device & Private:** Powered by `faster-whisper` running locally on your computer's CPU (`int8` quantization with adaptive multi-core CPU worker threads, up to 8 threads) using English-optimized speech models (`large-v3-turbo`, `small.en`, and `base.en`). Your videos, voice memos, and transcripts **never** touch the cloud, require no third-party API keys, and incur zero recurring costs.
-* **🎙️ Built-in Microphone Recording (`⌘D` / `Ctrl+D`):** Record voice notes and ideas directly inside the studio (`16kHz` mono PCM WAV via `sounddevice`) with a live `MM:SS` recording timer. Recordings are captured into a private scratch space, automatically transcribed on stop, and wiped cleanly afterward.
+* **🎙️ Built-in Microphone Recording (`⌘D` / `Ctrl+D`):** Record voice notes and ideas directly inside the studio (`16kHz` or native-rate mono PCM WAV via `sounddevice`) with a live `MM:SS` recording timer, animated voice level meter, silence detection alert, and automatic macOS TCC Microphone permission prompt. Recordings are captured into a private scratch space and wiped immediately after transcription.
 * **🌐 Paste Any Social Link (Instagram, TikTok, YouTube, Facebook):** Simply copy a link and click **`📋 Paste Link`** (`⌘L` / `Ctrl+L`). Audio is extracted into a temporary scratch space, resampled, transcribed, and **immediately destroyed**—leaving zero temporary media clutter on your hard drive.
 * **📄 Smart Acoustic Formatting:**
   * **`📄 Clean Paragraphs`:** Automatically detects natural speech pauses ($\ge 1.0$s) to format speech into clean, readable paragraphs ready to paste into Instagram captions, newsletters, or blog posts.
@@ -32,7 +32,7 @@ A delightful, 100% private, on-device desktop transcription studio and historica
   * **Instant SQLite FTS5 Full-Text Search:** Powered by an SQLite FTS5 virtual table with `unicode61` tokenization—enabling lightning-fast spoken word search not just by title or date, but **by any word or phrase spoken in the audio**!
   * **Speech Snippet Previews:** Search cards highlight the exact sentence from the transcript where the spoken words were detected (e.g. `💬 "...save for the muffled rhythm of rain..."`).
   * **Seamless Legacy Migration:** Automatically upgrades older JSON histories (`~/.faery_transcriptions_history.json`) into SQLite on startup, keeping a `.bak` copy for safety.
-* **📻 Ambient Faery Radio (104.9 The Grift FM):** Toggle on the radio switch (`⌘R` / `Ctrl+R`) to summon a retro-modern ambient music player docked gracefully at the bottom of the screen. Features 12 original apothecary tracks (including *"The Green Leaf Thief"* and *"Where You Gonna Run?"*), GTA-style DJ station bumpers, high-probability satirical legal disclaimers, embedded album artwork, click-to-seek timeline controls, and full keyboard media navigation. Completely disappears when toggled off to keep your workspace 100% clean.
+* **📻 Ambient Faery Radio (104.9 The Grift FM):** Toggle on the radio switch (`⌘R` / `Ctrl+R`) to summon a retro-modern ambient music player docked gracefully at the bottom of the screen. Features 17 original apothecary tracks (including *"The Green Leaf Thief"* and *"Where You Gonna Run?"*), GTA-style DJ station bumpers, high-probability satirical legal disclaimers, embedded album artwork, click-to-seek timeline controls, and full keyboard media navigation. Completely disappears when toggled off to keep your workspace 100% clean.
 * **🔐 Built-in "Social Login" Cookie Bridge:** Safely transcribe login-walled Instagram Reels or Facebook videos using your existing browser cookies (Safari, Chrome, Firefox, Edge, Brave) without ever sharing your password.
 * **🔄 Automatic Weekly Background Updates:** When running from a git clone, the app automatically checks for and pulls updates from GitHub every 7 days upon launch, without ever interrupting your workflow.
 * **🪄 Self-Calibrating Task ETA & Dynamic Estimate Display:** Upfront estimated time is displayed immediately when media is selected or recorded, accompanied by a whimsical `☕ (time for tea!)` indicator whenever jobs are estimated at 2 minutes or longer. Switching models dynamically recalculates the estimate. During transcription, a live blended estimator smoothly transitions from historical Real-Time Factor (RTF) to live measured throughput, continuously learning machine performance using an Exponential Moving Average (EMA) saved to settings.
@@ -102,7 +102,7 @@ flowchart LR
     D --> E["faster-whisper<br/>(100% Local CPU AI)"]
     E --> F["Zero-Footprint Cleanup<br/>(Scratch Audio Wiped)"]
     F --> G["Pick Format<br/>(Paragraphs or Timestamped)"]
-    G --> H["Copy to Clipboard<br/>(⌘C / Ctrl+C)"]
+    G --> H["Copy to Clipboard<br/>(⇧⌘C / Ctrl+Shift+C)"]
 ```
 
 1. In your browser or mobile app, copy the link of any **Instagram Reel**, **YouTube video/Short**, **TikTok**, or **Facebook clip**.
@@ -112,13 +112,13 @@ flowchart LR
    * The app extracts the audio stream into a private temporary scratch folder, converts it, streams the transcript live onto your screen, and **immediately deletes the audio download**.
    * When complete, a gentle apothecary chime plays!
 5. Toggle between **`📄 Clean Paragraphs`** (for social captions/blogs) and **`⏱️ Timestamped`** (for `[MM:SS]` segment timestamps).
-6. Click **`📋 Copy to Clipboard`** (`⌘C` / `Ctrl+C`) and paste it directly into your post!
+6. Click **`📋 Copy to Clipboard`** (or press `⇧⌘C` / `Ctrl+Shift+C`) and paste it directly into your post!
 
 ---
 
 ## Workflow 2: Transcribe a Local Video, Podcast, or Voice Memo
 
-1. Click **`📁 Select Video or Audio…`** (or press `⌘O` / `Ctrl+O`) to pick a file, or click **`🎙️ Record Mic`** (`⌘D` / `Ctrl+D`) to record a voice note directly from your microphone.
+1. Click **`📁 Select Local File…`** (or press `⌘O` / `Ctrl+O`) to pick a file, or click **`🎙️ Record Mic`** (`⌘D` / `Ctrl+D`) to record a voice note directly from your microphone. On macOS, grant microphone access when prompted (or toggle it ON in **System Settings → Privacy & Security → Microphone**).
 2. Select any media file on your computer (`.mp4`, `.mov`, `.m4a`, `.mp3`, `.wav`, `.mkv`, `.aac`, `.flac`).
 3. Select your preferred **English Transcription Engine**:
    * **`Maximum Accuracy (large-v3-turbo - Best Punctuation)` (Default & Recommended):** 809M parameters, 4-layer fast decoder (~809 MB INT8). Book-quality punctuation, accurate question marks, natural commas, and clean sentence structures.
@@ -185,7 +185,7 @@ Need some inspiring background music while reviewing your work?
 
 Toggle the **`📻 Radio`** switch in the top toolbar (or press `⌘R` / `Ctrl+R`) to tune into **104.9 The Grift FM**—a custom ambient lo-fi station complete with relaxing beats, embedded album art, and tongue-in-cheek radio bumpers.
 
-* **11 Original Apothecary Tracks:** Stored in `assets/music/` and played locally with low CPU usage via `pygame.mixer` (featuring tracks like *"The Green Leaf Thief"* and *"Where You Gonna Run?"*).
+* **17 Original Apothecary Tracks:** Stored in `assets/music/` and played locally with low CPU usage via `pygame.mixer` (featuring tracks like *"The Green Leaf Thief"* and *"Where You Gonna Run?"*).
 * **GTA-Style DJ Breaks & Bumpers:** Plays station IDs, anti-repeat bumper rotations, and hilarious satirical legal disclaimers between tracks.
 * **Zero-Workspace Clutter:** When toggled off, the player vanishes completely from the UI, keeping 100% of the screen dedicated to your transcripts.
 * **Click-to-Seek Timeline & Volume:** Jump anywhere in a song with a single mouse click or use full keyboard media controls.
@@ -203,7 +203,8 @@ Toggle the **`📻 Radio`** switch in the top toolbar (or press `⌘R` / `Ctrl+R
 | **Generate Transcript** | `⌘Return` | `Ctrl+Enter` | Studio Tab |
 | **Quick Save (.txt or History edits)** | `⌘S` | `Ctrl+S` | Active Editor |
 | **Select All Text** | `⌘A` | `Ctrl+A` | Active Editor |
-| **Copy Active Transcript** | `⌘C` | `Ctrl+C` | Active Editor |
+| **Copy Selected Text** | `⌘C` | `Ctrl+C` | Active Editor |
+| **Copy Entire Active Transcript** | `⇧⌘C` | `Ctrl+Shift+C` | Studio Tab |
 | **Switch to Transcribe Studio Tab** | `⌘1` | `Ctrl+1` | Global |
 | **Switch to History Library Tab** | `⌘2` | `Ctrl+2` | Global |
 | **Toggle Ambient Faery Radio** | `⌘R` | `Ctrl+R` | Global |
@@ -250,7 +251,7 @@ Faery Good Transcriber is engineered to be self-contained, robust, and completel
 8. **Self-Calibrating Task ETA & Blended Estimator (`TranscriptionEngine` & `ConfigManager`):**  
    Before processing begins, the engine evaluates duration against persisted historical Real-Time Factor (`model_rtf`). As transcription progresses, a live blended estimator smoothly transitions from historical performance to real-time throughput over the first 25% of audio duration. Upon task completion, an Exponential Moving Average ($\text{new\_rtf} = \text{round}(0.7 \times \text{current} + 0.3 \times \text{observed}, 3)$) updates persisted calibration, adapting to machine performance and thermal state over time.
 9. **Silent Rotating Diagnostic & Crash Logger (`crash_logger.py`):**  
-   Telemetry runs silently without polluting the user interface. Employs a 512KB rotating log handler (`~/.faery_transcriber_crash.log`), links into `sys.excepthook` and `threading.excepthook`, and activates Python's C-level `faulthandler` with `all_threads=True` to catch fatal interpreter terminations. The Help menu's "Copy Diagnostic Log" action extracts this data (or synthesizes a clean hardware and platform summary) to the system clipboard for effortless, zero-leak troubleshooting.
+   Telemetry runs silently without polluting the user interface. Employs a 512KB rotating log handler (`~/.faery_transcriber_crash.log`), links into `sys.excepthook` and `threading.excepthook`, and activates Python's C-level `faulthandler` with `all_threads=True` (writing to an isolated `~/.faery_transcriber_faulthandler.log` file to avoid rollover conflicts). The Help menu's "Copy Diagnostic Log" action extracts this data with local home paths redacted (or synthesizes a clean hardware and platform summary) to the system clipboard for effortless, zero-leak troubleshooting.
 
 For comprehensive developer documentation and architectural specifications, explore the repository's **Core-Knowledge** base:
 * 🧭 **[Core-Knowledge Index](knowledge/core_knowledge/index.md)** — Architectural routing table and folder contracts.
@@ -270,11 +271,11 @@ The repository includes an extensive automated test suite covering all critical 
 # Activate your virtual environment, then run:
 python test_app.py
 ```
-*(All 71 automated unit and integration tests, including launcher script invariants, execute in under 8 seconds).*
+*(All 80 automated unit and integration tests, including launcher script invariants, execute in under 9 seconds).*
 
 ### Building Standalone macOS App & DMG
 If you want to create a native macOS drag-and-drop installer:
-1. Double-click **`Build_Mac_App.command`** to build `FaeryTranscriber.app`.
+1. Double-click **`Build_Mac_App.command`** to build `Faery Good Transcriber.app` (ad-hoc signed with `macos_entitlements.plist`).
 2. Double-click **`Create_Mac_DMG.command`** to compile the DMG installer:
    ```text
    FaeryTranscriber-Intel-Mac.dmg
@@ -286,7 +287,10 @@ If you want to create a native macOS drag-and-drop installer:
 ## ❓ Frequently Asked Questions (FAQ)
 
 #### Q: Where are my transcript files stored?
-> By default, all transcripts are saved in your **`Documents/Transcriptions`** folder. You can open it anytime by pressing `⇧⌘O` / `Ctrl+Shift+O` or clicking **`📂 Open Folder`** in the Transcribe Studio tab.
+> By default, all transcripts are saved in your **`Documents/Transcriptions`** folder. You can open it anytime by pressing `⇧⌘O` / `Ctrl+Shift+O` or clicking **`📂 Folder`** in the studio dock.
+
+#### Q: Microphone recording on macOS finishes instantly or shows silence — why?
+> macOS gates microphone input with privacy permissions (TCC). Open **System Settings → Privacy & Security → Microphone** and ensure **Faery Good Transcriber** is toggled **ON**, then click **🎙️ Record Mic** again. Also check the live audio bar right under the recording card—it alerts you if zero signal is arriving.
 
 #### Q: Does this app upload my voice or videos to the internet?
 > **No, never.** All audio extraction and transcription run 100% locally on your computer's CPU. No audio, video, or text is ever sent to any third-party server or cloud AI provider.
@@ -314,23 +318,24 @@ TranscriptionEngine/
 │   ├── __main__.py             # 🚀 Module entry point (python -m faery_app)
 │   ├── constants.py            # 🎨 Visual themes, colors, audio playlists & defaults
 │   ├── config/                 # ⚙️ Persistent configuration manager (config.json)
-│   ├── lifecycle/              # 🧹 ScratchLifecycleManager (sandbox hygiene) & AutoUpdater
+│   ├── lifecycle/              # 🧹 ScratchLifecycleManager, AutoUpdater & CrashLogger
 │   ├── models/                 # 📄 Domain models (Metadata, Segments) & TranscriptFormatter
 │   ├── media/                  # 🎬 MediaProcessor (FFmpeg 16kHz WAV), OnlineMediaFetcher (yt-dlp/deno) & recorder.py (MicrophoneRecorder)
 │   ├── transcription/          # 🧠 TranscriptionEngine (faster-whisper local CPU inference)
 │   ├── radio/                  # 📻 RadioStationController (104.9 Grift FM) & album art
 │   ├── history/                # 📜 HistoryManager (SQLite & FTS5 full-text search)
-│   ├── utils/                  # 🛠️ System utilities & zero-sudo macOS application installer
+│   ├── utils/                  # 🛠️ System utilities, macOS Mach-O .app installer & TCC mic helpers
 │   └── ui/                     # 🌸 CustomTkinter presentation layer (views, dialogs, menus, dock)
 ├── requirements.txt            # 📦 Production Python dependencies
-├── test_app.py                 # 🧪 Automated unit & integration test suite (71 tests)
+├── test_app.py                 # 🧪 Automated unit & integration test suite (80 tests)
 ├── Run_Windows.bat             # 🪟 1-Click self-healing Windows launcher
-├── Run_Mac.command             # 🍎 1-Click self-healing macOS launcher & auto-installer to Applications
+├── Run_Mac.command             # 🍎 1-Click self-healing macOS launcher
 ├── Build_Mac_App.command       # 🍏 1-Click standalone .app bundle builder
 ├── Create_Mac_DMG.command      # 💿 1-Click drag-and-drop .dmg installer creator
 ├── FaeryTranscriber.spec       # ⚙️ PyInstaller standalone packaging specification
+├── macos_entitlements.plist    # 🔐 macOS microphone & hardened-runtime entitlements
 ├── assets/                     # 🎨 Official Faery Good icons, artwork & audio
-│   ├── music/                  # 🎵 Original ambient tracks (12 songs)
+│   ├── music/                  # 🎵 Original ambient tracks (17 songs)
 │   ├── announcer/              # 🎙️ GTA-style DJ station clips, disclaimers & bumpers
 │   ├── faery_icon.icns         # 🍎 macOS native application & DMG icon
 │   ├── faery_icon.ico          # 🪟 Windows native multi-size application icon

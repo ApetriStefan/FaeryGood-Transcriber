@@ -40,7 +40,7 @@ def extract_embedded_art(audio_path: Optional[Path], target_size: Tuple[int, int
 
         img_bytes: Optional[bytes] = None
         if jpg_idx != -1 and (png_idx == -1 or jpg_idx < png_idx):
-            end_idx = sub.find(b"\xff\xd9", jpg_idx)
+            end_idx = sub.rfind(b"\xff\xd9", jpg_idx)
             img_bytes = sub[jpg_idx : end_idx + 2] if end_idx != -1 else sub[jpg_idx:]
         elif png_idx != -1:
             end_idx = sub.find(b"IEND\xaeB`\x82", png_idx)

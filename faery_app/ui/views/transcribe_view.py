@@ -22,6 +22,7 @@ from faery_app.constants import (
     FAERY_ROSE_CARD,
     FAERY_SEGMENT_TRACK,
     FAERY_SEGMENT_HOVER,
+    FAERY_BERRY_TEXT,
     MODEL_DISPLAY_NAMES,
     COOKIE_BROWSER_OPTIONS,
 )
@@ -121,9 +122,34 @@ class TranscribeStudioView:
         )
         app.file_meta_label.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 6))
 
+        # Live Microphone Level & Silence Alert Row (hidden unless recording)
+        app.mic_level_row = ctk.CTkFrame(file_card, fg_color="transparent")
+        app.mic_level_row.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 6))
+        app.mic_level_row.grid_columnconfigure(0, weight=1)
+
+        app.mic_level_bar = ctk.CTkProgressBar(
+            app.mic_level_row,
+            height=7,
+            corner_radius=4,
+            fg_color=FAERY_SEGMENT_TRACK,
+            progress_color=FAERY_PURPLE,
+        )
+        app.mic_level_bar.grid(row=0, column=0, sticky="ew")
+        app.mic_level_bar.set(0.0)
+
+        app.mic_signal_label = ctk.CTkLabel(
+            app.mic_level_row,
+            text="Listening for audio…",
+            font=app.font_small,
+            text_color=FAERY_TEXT_MUTED,
+            anchor="w",
+        )
+        app.mic_signal_label.grid(row=1, column=0, sticky="ew", pady=(3, 0))
+        app.mic_level_row.grid_remove()
+
         # Online Link Input Row (Instagram / YouTube / TikTok / Facebook)
         url_bar_frame = ctk.CTkFrame(file_card, fg_color="transparent")
-        url_bar_frame.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 11))
+        url_bar_frame.grid(row=4, column=0, sticky="ew", padx=16, pady=(0, 11))
         url_bar_frame.grid_columnconfigure(0, weight=1)
 
         app.url_entry = ctk.CTkEntry(
@@ -435,9 +461,11 @@ class TranscribeStudioView:
             fg_color=FAERY_SECONDARY_BTN,
             hover_color=FAERY_SECONDARY_HOVER,
             text_color=FAERY_SECONDARY_TEXT,
+            text_color_disabled=FAERY_SECONDARY_DISABLED_TEXT,
             border_width=0,
             font=app.font_body_bold,
             command=app._on_copy_clicked,
+            state="disabled",
         )
         app.copy_btn.pack(side="left", padx=(0, 6))
         app.default_btn_fg = app.copy_btn.cget("fg_color")
@@ -451,9 +479,11 @@ class TranscribeStudioView:
             fg_color=FAERY_SECONDARY_BTN,
             hover_color=FAERY_SECONDARY_HOVER,
             text_color=FAERY_SECONDARY_TEXT,
+            text_color_disabled=FAERY_SECONDARY_DISABLED_TEXT,
             border_width=0,
             font=app.font_body_bold,
             command=app._on_save_txt_clicked,
+            state="disabled",
         )
         app.save_txt_btn.pack(side="left", padx=(0, 6))
 
@@ -466,9 +496,11 @@ class TranscribeStudioView:
             fg_color=FAERY_SECONDARY_BTN,
             hover_color=FAERY_SECONDARY_HOVER,
             text_color=FAERY_SECONDARY_TEXT,
+            text_color_disabled=FAERY_SECONDARY_DISABLED_TEXT,
             border_width=0,
             font=app.font_body_bold,
             command=app._on_save_md_clicked,
+            state="disabled",
         )
         app.save_md_btn.pack(side="left", padx=(0, 6))
 

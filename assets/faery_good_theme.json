@@ -139,7 +139,7 @@
   },
   "CTkFont": {
     "macOS": {
-      "family": "Montserrat",
+      "family": ".AppleSystemUIFont",
       "size": 13,
       "weight": "normal"
     },

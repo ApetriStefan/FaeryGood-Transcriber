@@ -42,42 +42,44 @@ This directory documents the deployment, packaging, execution environments, self
   - Clicking **"Install Python"** automatically initiates a download via `curl -fSL` targeting `https://www.python.org/ftp/python/3.12.10/python-3.12.10-macos11.pkg` saved to `/tmp/python-3.12.10-macos11.pkg`, and invokes `open "$PKG_PATH"` to present the official installer wizard. A modal guidance dialog guides the user to complete installation and re-launch. If download fails, it gracefully opens `https://www.python.org/downloads/macos/` in the default browser.
 * **Stale `.venv` Purging & Reset:**
   - Validates `.venv/bin/python` using `is_valid_python()`. If an existing virtual environment was built using Python < 3.10 (such as the default macOS 3.9 stub), it is automatically purged via `rm -rf ".venv"` prior to creating a fresh `.venv` using the resolved modern Python.
-* **Automatic Applications Folder Integration (`install_app_bundle`):**
-  - Probes writability of `/Applications`; falls back seamlessly to `$HOME/Applications` for standard accounts without root/sudo access.
-  - Constructs `Faery Good Transcriber.app` bundle containing `Info.plist` (including `NSMicrophoneUsageDescription`), `.venv` launcher script, and `faery_icon.icns`.
-  - Clears quarantine flags via `xattr -cr` and forces LaunchServices registration (`lsregister -f`) with timestamp touch for immediate Spotlight and Launchpad indexing.
+* **Single-Source Applications Folder Integration (Delegated to `app.py`):**
+  - `Run_Mac.command` delegates `.app` bundle creation, Mach-O TCC launcher compilation, ad-hoc signing, and LaunchServices registration to `app.py` (`ensure_macos_app_installed()` in `faery_app/utils/macos.py`), eliminating duplicate shell bundle generation.
 
 ---
 
 ## 3. Packaging & Standalone Bundling
 
-* **Build Specification:** `FaeryTranscriber.spec` using PyInstaller 6.x.
-* **Entry Point:** Targets `app.py` as the top-level script, collecting all modules under `faery_app/` as hidden imports (including `faery_app.media.recorder` and `faery_app.ui.dialogs.cookie_permission`) and collecting `yt_dlp_ejs`, `deno`, and `sounddevice` in `critical_pkgs`.
+* **Dependencies (`requirements.txt`):** Includes `numpy>=1.24.0` alongside `customtkinter`, `faster-whisper`, `av<18`, `imageio-ffmpeg`, `Pillow`, `pygame`, `pyinstaller`, `sounddevice`, `yt-dlp[default]`, and `yt-dlp-ejs`.
+* **Build Specification:** `FaeryTranscriber.spec` using PyInstaller 6.x (`target_arch=None`, UPX disabled on macOS via `use_upx = (sys.platform != "darwin")`).
+* **Entry Point:** Targets `app.py` as the top-level script, collecting all modules under `faery_app/` as hidden imports (including `faery_app.lifecycle.crash_logger`, `faery_app.media.recorder`, and `faery_app.ui.dialogs.cookie_permission`) and collecting `yt_dlp_ejs`, `deno`, and `sounddevice` in `critical_pkgs`.
 * **Windowed GUI:** Configured with `console=False` to prevent extraneous command prompt windows on end-user machines.
+* **macOS Entitlements & Codesigning (`macos_entitlements.plist`):**
+  - Grants `com.apple.security.device.audio-input`, `com.apple.security.device.microphone`, `com.apple.security.cs.allow-jit`, `com.apple.security.cs.allow-unsigned-executable-memory`, and `com.apple.security.cs.disable-library-validation`.
+  - Applied during PyInstaller bundling (`codesign_identity="-"`, `entitlements_file=mac_entitlements` in `FaeryTranscriber.spec`), `Build_Mac_App.command` (`codesign --force --deep --sign - --entitlements macos_entitlements.plist` plus Python >= 3.10 detection and `.venv` auto-reset), and source-mode `.app` registration (`_register_macos_app_bundle`).
 * **Asset Bundling:**
-  - Radio audio tracks (`assets/music/`) and bumpers (`assets/announcer/`).
-  - Warm UI theme JSON (`assets/faery_good_theme.json`).
+  - Radio audio tracks (`assets/music/` — 17 tracks) and bumpers (`assets/announcer/`).
+  - Warm UI theme JSON (`assets/faery_good_theme.json`, using `.AppleSystemUIFont` on macOS).
   - Brand icons (`assets/faery_icon.png`, `assets/faery_icon.ico`, `assets/faery_icon.icns`).
   - Bundled binary dependencies (`imageio_ffmpeg` static FFmpeg executable).
-* **Standalone Immunity:** In frozen binary mode, `sys.frozen` evaluates to `True`, automatically instructing `AutoUpdater` to skip Git execution.
+* **Standalone Immunity:** In frozen binary mode, `sys.frozen` evaluates to `True`, automatically instructing `AutoUpdater` to skip Git execution. In source-run mode, the compiled Mach-O `.app` launcher preserves `sys.frozen=False` so `AutoUpdater` continues working.
 * **macOS Application Registration Subsystem (`ensure_macos_app_installed`):**
   - Executed on startup bootstrap (`main()`) before GUI initialization.
-  - **Source-Run Mode:** Generates `.app` bundle structure with launcher script and metadata on first launch.
-  - **Frozen Bundle Mode:** Safely synchronizes the standalone PyInstaller bundle into `/Applications` (or `~/Applications`).
+  - **Source-Run Mode:** Compiles an in-process Mach-O `.app` launcher (`_compile_macos_macho_launcher` via `dlopen(libpython)` + `Py_BytesMain`, with shell script fallback if Xcode CLT is absent) and writes `Contents/.faery_bundle_meta.json` (`_is_bundle_current()`) so subsequent launches preserve TCC grants without rebuilding.
+  - **Frozen Bundle Mode:** Safely synchronizes the standalone PyInstaller bundle into `/Applications` (or `~/Applications`) using `shutil.copytree(..., symlinks=True)` to preserve framework symlinks.
   - **Zero-Sudo Friction:** Falls back from `/Applications` to `~/Applications` if system directory permissions are restricted, ensuring no administrator password dialogs are shown.
-  - **System Registration:** Strips quarantine bits (`xattr -cr`), executes `lsregister -f`, and updates directory mtime (`os.utime`) for immediate Spotlight discoverability (`⌘+Space`).
+  - **System Registration:** Strips quarantine bits (`xattr -cr`), applies ad-hoc `codesign` with `macos_entitlements.plist`, executes `lsregister -f`, and updates directory mtime (`os.utime`) for immediate Spotlight discoverability (`⌘+Space`).
 
 ---
 
 ## 4. Test Suite & Quality Verification
 
 * **Framework:** Standard library `unittest` (`test_app.py`).
-* **Status:** 71 passing unit and integration tests (0 failures, 0 errors).
+* **Status:** 80 passing unit and integration tests (0 failures, 0 errors).
 * **Execution:**
   ```bash
   python -m unittest test_app.py
   ```
-* **Test Matrix:** 71 comprehensive unit and integration tests covering:
+* **Test Matrix:** 80 comprehensive unit and integration tests covering:
   - Formatter logic (paragraphs, timecodes, markdown).
   - Scratch lifecycle hygiene, isolated directories, and file lock backoff.
   - Auto-update cadence, bundle detection, and offline handling.
@@ -91,3 +93,4 @@ This directory documents the deployment, packaging, execution environments, self
   - Diagnostic Logging & Task ETA Suite (`TestCrashLoggerAndTaskETA`): `format_eta` boundary transitions (<15s, <60s, <3600s, $\ge$3600s), `ConfigManager` `model_rtf` getters, [0.05, 3.0] boundary clamping, Exponential Moving Average (EMA) calibration persistence, silent rotating crash logging (`~/.faery_transcriber_crash.log`), stdlib `faulthandler` integration, system diagnostic fallback synthesis via `get_diagnostic_log_content`, `TranscriptionEngine` live blended RTF calculation and post-task EMA calibration, dynamic metadata display, model switching with tea hint (`☕`), `MODEL_DISPLAY_NAMES` validation with `large-v3-turbo` as default, and `ConfigManager` baseline RTF (0.48) and canonical alias resolution.
   - Punctuation & Model Accuracy Optimization Suite (`TestFormattersAndEdgeCases`): `TranscriptFormatter._heal_paragraph()` boundary normalization (converting trailing commas, colons, and semicolons to periods on boundary closure, closing unpunctuated alphanumeric endings with periods, auto-capitalizing lowercase paragraph starts, and preserving legitimate terminal punctuation `.`, `!`, `?`, `."`, `!"`, `?"`, `”`, `…`), empty and whitespace-only boundary handling, and `TranscriptionEngine` punctuation priming injection (`initial_prompt=DEFAULT_PUNCTUATION_PROMPT`, `condition_on_previous_text=True`).
   - Launcher Script & Runtime Invariants Suite (`TestLauncherScripts`): script existence and structure validation for `Run_Mac.command` and `Run_Windows.bat`, Python >= 3.10 version checking logic (`sys.version_info >= (3, 10)`), candidate path scans omitting EOL Python 3.8/3.9, macOS built-in Python 3.9 stub rejection, stale/incompatible `.venv` detection and automatic purging simulation, frictionless 1-click Python 3.12 installer package download and invocation flow (`python-3.12.10-macos11.pkg`), and Windows WinForms alert dialog triggers.
+  - Audit Phase Hardening & TCC Suite (`TestAuditPhaseFixes`): pure-silence PCM rejection (`_validate_non_silent_audio`) and preserving `model_rtf` on 0-segment outcomes, `MicrophoneRecorder` all-zero rejection and `16000` Hz → native sample-rate fallback, macOS TCC helper status/permission checks and `.app` bundle `Info.plist` / sentinel preservation, `OnlineMediaFetcher` explicit-browser no-prompt and retry error retention, `ConfigManager` empty `output_directory` fallback and concurrent thread-safe saves, `HistoryManager` multi-token `LIKE` matching and rename conflict rollback, `RadioStationController` infinite failure loop break, and `AutoUpdater` stash-pop conflict rollback preserving Spotlight source-mode updates.

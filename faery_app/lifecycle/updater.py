@@ -36,18 +36,15 @@ class AutoUpdater:
 
     @staticmethod
     def is_internet_available(timeout: float = 2.0) -> bool:
-        """Quickly checks for internet connectivity without blocking."""
+        """Quickly checks for internet connectivity with DNS and HTTPS fallbacks."""
         import socket
-        try:
-            # Connect to Cloudflare or Google public DNS on port 53 (extremely fast, low overhead)
-            socket.create_connection(("1.1.1.1", 53), timeout=timeout).close()
-            return True
-        except OSError:
+        for host, port in (("1.1.1.1", 53), ("8.8.8.8", 53), ("github.com", 443)):
             try:
-                socket.create_connection(("8.8.8.8", 53), timeout=timeout).close()
+                socket.create_connection((host, port), timeout=timeout).close()
                 return True
             except OSError:
-                return False
+                continue
+        return False
 
     @classmethod
     def should_check_update(cls, config: ConfigManager, force: bool = False) -> bool:
@@ -207,9 +204,9 @@ class AutoUpdater:
 
             # Remote has new commits! Pull them
             if has_local_changes:
-                # Stash local modifications, pull, and reapply cleanly
+                # Stash local modifications, pull, and reapply safely
                 subprocess.run(
-                    ["git", "stash"],
+                    ["git", "stash", "push", "--quiet", "-m", "faery-autoupdate"],
                     cwd=str(project_dir),
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
@@ -227,7 +224,7 @@ class AutoUpdater:
                         timeout=30,
                     )
                 finally:
-                    subprocess.run(
+                    pop_proc = subprocess.run(
                         ["git", "stash", "pop"],
                         cwd=str(project_dir),
                         stdout=subprocess.DEVNULL,
@@ -235,6 +232,16 @@ class AutoUpdater:
                         creationflags=creation_flags,
                         timeout=10,
                     )
+                    if pop_proc.returncode != 0:
+                        # Roll back conflict markers in working tree so code isn't corrupted
+                        subprocess.run(
+                            ["git", "checkout", "--", "."],
+                            cwd=str(project_dir),
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            creationflags=creation_flags,
+                            timeout=10,
+                        )
             else:
                 pull_proc = subprocess.run(
                     ["git", "pull", "--ff-only", "origin", "main"],
@@ -247,6 +254,33 @@ class AutoUpdater:
                 )
 
             if pull_proc.returncode == 0:
+                # If requirements.txt changed in the pulled commits, sync packages into active Python
+                try:
+                    diff_proc = subprocess.run(
+                        ["git", "diff", "--name-only", rev_local, "HEAD"],
+                        cwd=str(project_dir),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        creationflags=creation_flags,
+                        timeout=10,
+                    )
+                    req_file = project_dir / "requirements.txt"
+                    if (
+                        diff_proc.returncode == 0
+                        and "requirements.txt" in (diff_proc.stdout or "")
+                        and req_file.exists()
+                    ):
+                        subprocess.run(
+                            [sys.executable, "-m", "pip", "install", "-r", str(req_file), "-q"],
+                            cwd=str(project_dir),
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            creationflags=creation_flags,
+                            timeout=120,
+                        )
+                except Exception:
+                    pass
                 return True, "✨ Updated successfully to the latest version from GitHub!"
             else:
                 return False, "Could not download the update. Please try again later."

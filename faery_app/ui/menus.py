@@ -56,19 +56,20 @@ class MenuBuilder:
             label="Save Markdown (.md)...",
             command=app._on_save_md_clicked,
         )
-        file_menu.add_separator()
-        file_menu.add_command(
-            label="Exit",
-            accelerator=f"{mod_sym}+Q" if is_mac else "Alt+F4",
-            command=app._on_window_close,
-        )
+        if not is_mac:
+            file_menu.add_separator()
+            file_menu.add_command(
+                label="Exit",
+                accelerator="Alt+F4",
+                command=app._on_window_close,
+            )
         menu_bar.add_cascade(label="File", menu=file_menu)
 
         # Edit Menu
         edit_menu = tk.Menu(menu_bar, tearoff=0)
         edit_menu.add_command(
             label="Copy Active Transcript",
-            accelerator=f"{mod_sym}+C",
+            accelerator=f"Shift+{mod_sym}+C",
             command=app._on_copy_clicked,
         )
         edit_menu.add_command(
@@ -177,9 +178,10 @@ class MenuBuilder:
             app.bind(f"<{mod}-Key-d>", lambda e: app._on_record_mic_clicked())
             app.bind(f"<{mod}-Key-D>", lambda e: app._on_record_mic_clicked())
             app.bind(f"<{mod}-Key-l>", lambda e: app._on_paste_url_clicked())
-            app.bind(f"<{mod}-Key-O>", lambda e: app._on_open_folder_clicked())
             app.bind(f"<{mod}-Shift-Key-O>", lambda e: app._on_open_folder_clicked())
             app.bind(f"<{mod}-Shift-Key-o>", lambda e: app._on_open_folder_clicked())
+            app.bind(f"<{mod}-Shift-Key-C>", lambda e: app._on_copy_clicked())
+            app.bind(f"<{mod}-Shift-Key-c>", lambda e: app._on_copy_clicked())
             app.bind(f"<{mod}-Key-s>", lambda e: app._on_quick_save())
             app.bind(f"<{mod}-Key-Return>", lambda e: app._on_generate_clicked())
             app.bind(f"<{mod}-KP_Enter>", lambda e: app._on_generate_clicked())
@@ -212,6 +214,9 @@ class MenuBuilder:
                         return  # Let normal typing of spaces work
             except Exception:
                 pass
+
+            if getattr(getattr(app, "recorder", None), "is_recording", False):
+                return
 
             if hasattr(app, "radio_controller"):
                 # If radio UI is visible or radio is playing/paused, toggle playback

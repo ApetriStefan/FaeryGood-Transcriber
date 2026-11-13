@@ -58,10 +58,12 @@ def init_crash_logging() -> None:
         except Exception:
             pass
 
-    # Python stdlib faulthandler
+    # Python stdlib faulthandler writes to a dedicated file descriptor so
+    # RotatingFileHandler on Windows never collides during log rollover.
     try:
+        fh_path = CRASH_LOG_PATH.with_name(".faery_transcriber_faulthandler.log")
         if _crash_file_handle is None or _crash_file_handle.closed:
-            _crash_file_handle = open(CRASH_LOG_PATH, "a", encoding="utf-8")
+            _crash_file_handle = open(fh_path, "a", encoding="utf-8")
         faulthandler.enable(file=_crash_file_handle, all_threads=True)
     except Exception:
         pass
@@ -162,16 +164,20 @@ def log_exception(exc_or_msg: Union[BaseException, str], context: str = "") -> N
 
 def get_diagnostic_log_content(max_lines: int = 100) -> str:
     """
-    Reads the tail of CRASH_LOG_PATH. If empty or missing, returns
-    a comprehensive system summary (OS, Python version, platform, memory).
+    Reads the tail of CRASH_LOG_PATH with local user home path redaction. If empty or missing,
+    returns a comprehensive system summary (OS, Python version, platform, memory).
     """
+    home_str = str(Path.home())
     if CRASH_LOG_PATH.exists():
         try:
             with open(CRASH_LOG_PATH, "r", encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()
             if lines and any(l.strip() for l in lines):
                 tail = lines[-max_lines:]
-                return "".join(tail)
+                raw = "".join(tail)
+                if home_str:
+                    raw = raw.replace(home_str, "~")
+                return raw
         except Exception:
             pass
 
@@ -181,7 +187,7 @@ def get_diagnostic_log_content(max_lines: int = 100) -> str:
         f"OS: {platform.system()} {platform.release()} ({platform.version()})",
         f"Platform: {platform.platform()}",
         f"Architecture: {platform.machine()}",
-        f"Python Version: {platform.python_version()} ({sys.executable})",
+        f"Python Version: {platform.python_version()} ({sys.executable.replace(home_str, '~') if home_str else sys.executable})",
     ]
     try:
         import psutil

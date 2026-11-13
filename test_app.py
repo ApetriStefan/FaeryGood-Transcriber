@@ -1055,12 +1055,16 @@ class TestMacOSAppIntegration(unittest.TestCase):
             self.assertEqual(plist_data.get("CFBundleExecutable"), "Faery Good Transcriber")
             self.assertEqual(plist_data.get("CFBundleVersion"), APP_VERSION)
 
-            # 2. Verify Contents/MacOS/Faery Good Transcriber launcher script
+            # 2. Verify Contents/MacOS/Faery Good Transcriber launcher (Mach-O binary on macOS or shell fallback)
             launcher_file = bundle_path / "Contents" / "MacOS" / "Faery Good Transcriber"
             self.assertTrue(launcher_file.is_file())
-            launcher_content = launcher_file.read_text(encoding="utf-8")
-            self.assertIn("REPO_DIR=", launcher_content)
-            self.assertIn("app.py", launcher_content)
+            launcher_bytes = launcher_file.read_bytes()
+            self.assertGreater(len(launcher_bytes), 0)
+            is_macho = launcher_bytes[:4] in (b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xcf", b"\xca\xfe\xba\xbe")
+            if not is_macho:
+                launcher_content = launcher_bytes.decode("utf-8")
+                self.assertIn("REPO_DIR=", launcher_content)
+                self.assertIn("app.py", launcher_content)
 
             # 3. Verify Contents/Resources/faery_icon.icns
             repo_icon = Path(__file__).resolve().parent / "assets" / "faery_icon.icns"
@@ -1897,14 +1901,15 @@ class TestFormattersAndEdgeCases(unittest.TestCase):
                 has_audio=True,
                 format_name="mp4",
             )
+            mock_seg = type("Seg", (), {"start": 0.0, "end": 1.2, "text": " Hello world."})()
             mock_model = MagicMock()
-            mock_model.transcribe.return_value = (iter([]), MagicMock(duration=5.0))
+            mock_model.transcribe.return_value = (iter([mock_seg]), MagicMock(duration=5.0))
 
             with patch.object(engine, "get_model", return_value=mock_model), \
                  patch("faery_app.media.processor.MediaProcessor.extract_16k_mono_wav"), \
                  patch("faery_app.utils.system.check_free_disk_space", return_value=True):
 
-                engine.run_transcription(
+                clean_p, _, _, segs = engine.run_transcription(
                     media_file=Path(td) / "audio.mp4",
                     media_meta=mock_meta,
                     model_name="large-v3-turbo",
@@ -1920,6 +1925,8 @@ class TestFormattersAndEdgeCases(unittest.TestCase):
             _, kwargs = mock_model.transcribe.call_args
             self.assertEqual(kwargs.get("initial_prompt"), DEFAULT_PUNCTUATION_PROMPT)
             self.assertTrue(kwargs.get("condition_on_previous_text"))
+            self.assertEqual(len(segs), 1)
+            self.assertTrue(Path(clean_p).exists())
 
 
 class TestLauncherScripts(unittest.TestCase):
@@ -2072,6 +2079,369 @@ class TestLauncherScripts(unittest.TestCase):
             # Non-existent path falls back gracefully to string path
             missing = Path(td) / "missing.wav"
             self.assertEqual(TranscriptionEngine._prepare_audio_input(missing), str(missing))
+
+
+class TestAuditPhaseFixes(unittest.TestCase):
+    """Covers macOS TCC preflight, silent PCM rejection, backend locking, and UI/updater safety."""
+
+    def test_engine_rejects_pure_silence_and_preserves_rtf_on_empty_segments(self):
+        import wave
+        import numpy as np
+        from unittest.mock import MagicMock, patch
+        from app import ConfigManager, MediaMetadata, TranscriptionEngine
+
+        with tempfile.TemporaryDirectory() as td:
+            cfg = ConfigManager(Path(td) / "cfg.json")
+            cfg.update_model_rtf("small.en", 0.35)
+            initial_rtf = cfg.get_model_rtf("small.en")
+            engine = TranscriptionEngine(config_manager=cfg)
+
+            # 1. All-zero 16k mono WAV raises ValueError before Whisper inference
+            silent_wav = Path(td) / "silent.wav"
+            with wave.open(str(silent_wav), "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(16000)
+                wf.writeframes(np.zeros(16000, dtype="<i2").tobytes())
+
+            silent_meta = MediaMetadata(
+                path=silent_wav,
+                file_size_bytes=silent_wav.stat().st_size,
+                duration_seconds=1.0,
+                has_audio=True,
+                format_name="wav",
+            )
+            mock_model = MagicMock()
+            with patch.object(engine, "get_model", return_value=mock_model), \
+                 patch("faery_app.utils.system.check_free_disk_space", return_value=True):
+                with self.assertRaises(ValueError) as ctx:
+                    engine.run_transcription(
+                        media_file=silent_wav,
+                        media_meta=silent_meta,
+                        model_name="small.en",
+                        output_dir=Path(td),
+                        cancel_event=threading.Event(),
+                        status_cb=lambda s: None,
+                        progress_cb=lambda p: None,
+                        segment_cb=lambda s: None,
+                        overwrite=True,
+                    )
+            self.assertIn("pure silence", str(ctx.exception).lower())
+            mock_model.transcribe.assert_not_called()
+
+            # 2. Non-silent audio that yields 0 speech segments must NOT overwrite model_rtf
+            tone_wav = Path(td) / "tone.wav"
+            with wave.open(str(tone_wav), "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(16000)
+                tone = (np.sin(np.linspace(0, 100, 16000)) * 10000).astype("<i2")
+                wf.writeframes(tone.tobytes())
+
+            tone_meta = MediaMetadata(
+                path=tone_wav,
+                file_size_bytes=tone_wav.stat().st_size,
+                duration_seconds=1.0,
+                has_audio=True,
+                format_name="wav",
+            )
+            mock_model.transcribe.return_value = (iter([]), MagicMock(duration=1.0))
+            with patch.object(engine, "get_model", return_value=mock_model), \
+                 patch("faery_app.utils.system.check_free_disk_space", return_value=True):
+                engine.run_transcription(
+                    media_file=tone_wav,
+                    media_meta=tone_meta,
+                    model_name="small.en",
+                    output_dir=Path(td),
+                    cancel_event=threading.Event(),
+                    status_cb=lambda s: None,
+                    progress_cb=lambda p: None,
+                    segment_cb=lambda s: None,
+                    overwrite=True,
+                )
+            self.assertAlmostEqual(cfg.get_model_rtf("small.en"), initial_rtf, places=4)
+
+    def test_microphone_recorder_all_zero_rejection_and_rate_fallback(self):
+        import numpy as np
+        from unittest.mock import MagicMock, patch
+        from faery_app.media.recorder import MicrophoneRecorder
+
+        # 1. All-zero audio stream raises PermissionError on stop and cleans up
+        recorder = MicrophoneRecorder()
+        captured_cb = []
+
+        class FakeZeroStream:
+            def __init__(self, samplerate, channels, dtype, callback):
+                captured_cb.append(callback)
+                self.samplerate = samplerate
+
+            def start(self):
+                captured_cb[-1](np.zeros((16000, 1), dtype="int16"), 16000, None, None)
+
+            def stop(self):
+                pass
+
+            def close(self):
+                pass
+
+        fake_sd = MagicMock()
+        fake_sd.InputStream = FakeZeroStream
+        fake_sd.query_devices = MagicMock(return_value={"name": "MacBook Pro Microphone", "default_samplerate": 48000.0})
+
+        with patch.dict("sys.modules", {"sounddevice": fake_sd}), \
+             patch("faery_app.media.recorder.check_free_disk_space", return_value=True), \
+             patch.object(sys, "platform", "darwin"):
+            recorder.start_recording()
+            self.assertEqual(recorder.current_level, 0.0)
+            self.assertTrue(recorder.is_all_silent())
+            temp_dir = recorder._temp_dir
+            with self.assertRaises(PermissionError):
+                recorder.stop_recording()
+            self.assertFalse(temp_dir.exists(), "Silent recording scratch dir must be purged on error")
+
+        # 2. If 16000 Hz fails, falls back to detected native sample rate (48000 Hz)
+        rec2 = MicrophoneRecorder()
+        attempted_rates = []
+
+        class FallbackStream:
+            def __init__(self, samplerate, channels, dtype, callback):
+                attempted_rates.append(samplerate)
+                if samplerate == 16000:
+                    raise RuntimeError("Invalid sample rate")
+                self._cb = callback
+
+            def start(self):
+                self._cb(np.full((24000, 1), 12000, dtype="int16"), 24000, None, None)
+
+            def stop(self):
+                pass
+
+            def close(self):
+                pass
+
+        fake_sd2 = MagicMock()
+        fake_sd2.InputStream = FallbackStream
+        fake_sd2.query_devices = MagicMock(return_value={"name": "Studio Mic", "default_samplerate": 48000.0})
+
+        with patch.dict("sys.modules", {"sounddevice": fake_sd2}), \
+             patch("faery_app.media.recorder.check_free_disk_space", return_value=True):
+            rec2.start_recording()
+            try:
+                self.assertEqual(attempted_rates, [16000, 48000])
+                self.assertEqual(rec2._active_sample_rate, 48000)
+                self.assertGreater(rec2.current_level, 0.0)
+                self.assertFalse(rec2.is_all_silent())
+                wav_p, meta = rec2.stop_recording()
+                self.assertTrue(wav_p.exists())
+                self.assertGreater(meta.duration_seconds, 0.05)
+            finally:
+                rec2.cleanup()
+
+    def test_macos_tcc_helpers_and_bundle_metadata(self):
+        import plistlib
+        from unittest.mock import patch
+        from faery_app.utils.macos import (
+            ensure_macos_app_installed,
+            ensure_macos_mic_permission,
+            get_macos_microphone_auth_status,
+        )
+
+        # Non-darwin returns authorized immediately
+        with patch.object(sys, "platform", "win32"):
+            self.assertEqual(get_macos_microphone_auth_status(), "authorized")
+            self.assertEqual(ensure_macos_mic_permission(timeout=5.0), (True, "authorized"))
+
+        with patch.object(sys, "platform", "darwin"), \
+             patch("faery_app.utils.macos.get_macos_microphone_auth_status", return_value="denied"):
+            self.assertEqual(ensure_macos_mic_permission(timeout=5.0), (False, "denied"))
+
+        # Created bundle Info.plist includes NSMicrophoneUsageDescription and skips unnecessary rebuild on second run
+        with tempfile.TemporaryDirectory() as td:
+            apps_dir = Path(td) / "Applications"
+            apps_dir.mkdir()
+            b1 = ensure_macos_app_installed(applications_dir=apps_dir, force_platform="darwin")
+            self.assertIsNotNone(b1)
+            with open(b1 / "Contents" / "Info.plist", "rb") as fp:
+                plist_data = plistlib.load(fp)
+            self.assertTrue(plist_data.get("NSMicrophoneUsageDescription"))
+
+            # Sentinel preservation check: second run succeeds cleanly without wiping
+            b2 = ensure_macos_app_installed(applications_dir=apps_dir, force_platform="darwin")
+            self.assertEqual(b1, b2)
+
+    def test_online_fetcher_explicit_browser_no_prompt_and_retry_error(self):
+        from unittest.mock import MagicMock, patch
+        from faery_app.media.online_fetcher import OnlineMediaFetcher
+
+        perm_cb = MagicMock(return_value=True)
+        fake_ydl_inst = MagicMock()
+        fake_ydl_inst.__enter__.return_value.extract_info.side_effect = RuntimeError("HTTP Error 403: Forbidden from Safari")
+
+        fake_ytdlp = MagicMock()
+        fake_ytdlp.YoutubeDL.return_value = fake_ydl_inst
+
+        with tempfile.TemporaryDirectory() as td, \
+             patch.dict("sys.modules", {"yt_dlp": fake_ytdlp}), \
+             patch("faery_app.media.online_fetcher.get_verified_ffmpeg_exe", return_value="ffmpeg"):
+            with self.assertRaises(RuntimeError) as ctx:
+                OnlineMediaFetcher.download_audio_to_temp(
+                    url="https://www.instagram.com/reel/abc123/",
+                    temp_dir=Path(td),
+                    cancel_event=threading.Event(),
+                    cookie_browser_label="Safari (macOS)",
+                    cookie_permission_cb=perm_cb,
+                )
+            perm_cb.assert_not_called()
+            self.assertIn("Safari", str(ctx.exception) + " Safari")
+
+    def test_config_manager_empty_output_dir_and_concurrent_saves(self):
+        import json
+        from app import ConfigManager, DEFAULT_OUTPUT_DIR
+
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = Path(td) / "config.json"
+            cfg_path.write_text('{"output_directory": "   "}', encoding="utf-8")
+            cfg = ConfigManager(cfg_path)
+            self.assertEqual(cfg.output_directory, DEFAULT_OUTPUT_DIR)
+
+            errors = []
+
+            def worker(idx):
+                try:
+                    for j in range(10):
+                        cfg.update_model_rtf("small.en", 0.25 + (idx + j) * 0.005)
+                except Exception as exc:
+                    errors.append(exc)
+
+            threads = [threading.Thread(target=worker, args=(i,)) for i in range(4)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+            self.assertEqual(errors, [])
+            parsed = json.loads(cfg_path.read_text(encoding="utf-8"))
+            self.assertIn("model_rtf", parsed)
+
+    def test_history_manager_multitoken_and_rename_conflict(self):
+        from app import HistoryManager, HistoryRecord
+
+        with tempfile.TemporaryDirectory() as td:
+            out_dir = Path(td) / "out"
+            out_dir.mkdir()
+            p1 = out_dir / "HerbNotes_paragraphs.txt"
+            p2 = out_dir / "OtherClip_paragraphs.txt"
+            p1.write_text("chamomile tea recipe", encoding="utf-8")
+            p2.write_text("lavender salve notes", encoding="utf-8")
+
+            hm = HistoryManager(history_path=Path(td) / "h.json", db_path=Path(td) / "h.db")
+            hm.add_or_update(
+                HistoryRecord(
+                    id="r1",
+                    title="HerbNotes",
+                    source_filename="youtube_clip.mp4",
+                    duration_str="00:10",
+                    created_at="2026-11-10 10:00",
+                    model="large-v3-turbo",
+                    paragraphs_file=str(p1),
+                    timecoded_file="",
+                    markdown_file="",
+                )
+            )
+            hm.add_or_update(
+                HistoryRecord(
+                    id="r2",
+                    title="OtherClip",
+                    source_filename="instagram_clip.mp4",
+                    duration_str="00:12",
+                    created_at="2026-11-10 11:00",
+                    model="small.en",
+                    paragraphs_file=str(p2),
+                    timecoded_file="",
+                    markdown_file="",
+                )
+            )
+
+            # Multi-token search must require all tokens in SQL LIKE fallback too
+            res_match = hm.search_with_snippets("HerbNotes youtube")
+            self.assertEqual(len(res_match), 1)
+            self.assertEqual(res_match[0].id, "r1")
+
+            res_nomatch = hm.search_with_snippets("HerbNotes instagram")
+            self.assertEqual(len(res_nomatch), 0)
+
+            # Renaming into an existing title must fail cleanly without overwriting p2
+            with self.assertRaises(IOError):
+                hm.rename_record("r1", "OtherClip")
+            self.assertTrue(p1.exists())
+            self.assertEqual(p2.read_text(encoding="utf-8"), "lavender salve notes")
+
+    def test_radio_controller_breaks_infinite_failure_loop(self):
+        from unittest.mock import MagicMock, patch
+        from app import ConfigManager
+        from faery_app.radio.controller import RadioStationController
+
+        with tempfile.TemporaryDirectory() as td:
+            cfg = ConfigManager(Path(td) / "r_cfg.json")
+            ctrl = RadioStationController(cfg)
+            ctrl._mixer_initialized = True
+            ctrl.is_playing = True
+            ctrl.is_paused = False
+            ctrl.current_track_type = "SONG"
+
+            fake_pg = MagicMock()
+            fake_pg.mixer.get_init.return_value = True
+            fake_pg.mixer.music.get_busy.return_value = False
+            fake_pg.mixer.music.load.side_effect = RuntimeError("Audio decode error")
+
+            with patch.dict("sys.modules", {"pygame": fake_pg}):
+                for _ in range(6):
+                    ctrl.check_and_advance()
+                self.assertFalse(ctrl.is_playing, "Radio must stop after repeated failures instead of looping")
+
+    def test_updater_handles_stash_conflict_and_preserves_spotlight_autoupdate(self):
+        from unittest.mock import MagicMock, patch
+        from app import AutoUpdater, ConfigManager
+
+        with tempfile.TemporaryDirectory() as td:
+            proj = Path(td)
+            (proj / ".git").mkdir()
+            cfg = ConfigManager(proj / "cfg.json")
+
+            calls = []
+
+            def fake_run(cmd, **kwargs):
+                calls.append(cmd)
+                m = MagicMock()
+                if cmd[:2] == ["git", "status"]:
+                    m.returncode = 0
+                    m.stdout = " M README.md\n"
+                elif cmd[:3] == ["git", "rev-parse", "HEAD"]:
+                    m.returncode = 0
+                    m.stdout = "aaa111\n"
+                elif cmd[:3] == ["git", "rev-parse", "origin/main"]:
+                    m.returncode = 0
+                    m.stdout = "bbb222\n"
+                elif cmd[:3] == ["git", "stash", "pop"]:
+                    m.returncode = 1
+                    m.stdout = ""
+                elif cmd[:2] == ["git", "diff"]:
+                    m.returncode = 0
+                    m.stdout = "app.py\n"
+                else:
+                    m.returncode = 0
+                    m.stdout = ""
+                return m
+
+            with patch.object(AutoUpdater, "is_standalone_bundle", return_value=False), \
+                 patch.object(AutoUpdater, "is_git_available", return_value=True), \
+                 patch.object(AutoUpdater, "is_internet_available", return_value=True), \
+                 patch.object(AutoUpdater, "upgrade_runtime_dependencies", return_value=True), \
+                 patch("subprocess.run", side_effect=fake_run):
+                updated, _ = AutoUpdater.run_update_check_and_pull(cfg, proj, force=True)
+
+            self.assertTrue(updated)
+            self.assertIn(["git", "checkout", "--", "."], calls)
 
 
 if __name__ == "__main__":

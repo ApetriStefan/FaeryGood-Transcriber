@@ -60,7 +60,7 @@ if [ -f "$DMG_NAME" ]; then
     echo "    $DIR/$DMG_NAME"
     echo "========================================================"
     echo "Ericka can simply double-click this DMG, drag"
-    echo "FaeryTranscriber into Applications, and launch!"
+    echo "Faery Good Transcriber.app into Applications, and launch!"
     
     # Reveal in Finder
     open -R "$DMG_NAME"

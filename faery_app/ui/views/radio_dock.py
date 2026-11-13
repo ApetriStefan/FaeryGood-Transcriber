@@ -124,7 +124,7 @@ class RadioPlayerDock:
 
         app.radio_play_pause_btn = ctk.CTkButton(
             controls_row,
-            text="⏸",
+            text="▶",
             width=36,
             height=30,
             corner_radius=15,

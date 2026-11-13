@@ -27,6 +27,7 @@ class OnlineMediaFetcher:
 
     ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
     _cached_deno_exe: Optional[str] = None
+    _deno_lock = threading.Lock()
 
     @staticmethod
     def is_valid_url(url_str: str) -> bool:
@@ -90,44 +91,45 @@ class OnlineMediaFetcher:
     @classmethod
     def _get_deno_executable(cls) -> Optional[str]:
         """Resolves and caches the bundled or installed Deno JavaScript runtime for yt-dlp."""
-        if cls._cached_deno_exe and os.path.isfile(cls._cached_deno_exe):
-            parent_dir = str(Path(cls._cached_deno_exe).parent)
-            current_path = os.environ.get("PATH", "")
-            path_parts = current_path.split(os.pathsep) if current_path else []
-            if parent_dir not in path_parts:
-                os.environ["PATH"] = f"{parent_dir}{os.pathsep}{current_path}" if current_path else parent_dir
-            return cls._cached_deno_exe
+        with cls._deno_lock:
+            if cls._cached_deno_exe and os.path.isfile(cls._cached_deno_exe):
+                parent_dir = str(Path(cls._cached_deno_exe).parent)
+                current_path = os.environ.get("PATH", "")
+                path_parts = current_path.split(os.pathsep) if current_path else []
+                if parent_dir not in path_parts:
+                    os.environ["PATH"] = f"{parent_dir}{os.pathsep}{current_path}" if current_path else parent_dir
+                return cls._cached_deno_exe
 
-        deno_bin: Optional[str] = None
-        try:
-            import deno
-            cand = deno.find_deno_bin()
-            if cand and Path(cand).is_file():
-                deno_bin = str(cand)
-        except Exception:
-            pass
+            deno_bin: Optional[str] = None
+            try:
+                import deno
+                cand = deno.find_deno_bin()
+                if cand and Path(cand).is_file():
+                    deno_bin = str(cand)
+            except Exception:
+                pass
 
-        if not deno_bin:
-            which_deno = shutil.which("deno")
-            if which_deno and Path(which_deno).is_file():
-                deno_bin = which_deno
+            if not deno_bin:
+                which_deno = shutil.which("deno")
+                if which_deno and Path(which_deno).is_file():
+                    deno_bin = which_deno
 
-        if not deno_bin and getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-            bundled = Path(sys._MEIPASS) / ("deno.exe" if sys.platform == "win32" else "deno")
-            if bundled.is_file():
-                deno_bin = str(bundled)
+            if not deno_bin and getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+                bundled = Path(sys._MEIPASS) / ("deno.exe" if sys.platform == "win32" else "deno")
+                if bundled.is_file():
+                    deno_bin = str(bundled)
 
-        if deno_bin:
-            resolved = Path(deno_bin).resolve()
-            resolved_str = str(resolved)
-            cls._cached_deno_exe = resolved_str
-            parent_dir = str(resolved.parent)
-            current_path = os.environ.get("PATH", "")
-            path_parts = current_path.split(os.pathsep) if current_path else []
-            if parent_dir not in path_parts:
-                os.environ["PATH"] = f"{parent_dir}{os.pathsep}{current_path}" if current_path else parent_dir
-            return resolved_str
-        return None
+            if deno_bin:
+                resolved = Path(deno_bin).resolve()
+                resolved_str = str(resolved)
+                cls._cached_deno_exe = resolved_str
+                parent_dir = str(resolved.parent)
+                current_path = os.environ.get("PATH", "")
+                path_parts = current_path.split(os.pathsep) if current_path else []
+                if parent_dir not in path_parts:
+                    os.environ["PATH"] = f"{parent_dir}{os.pathsep}{current_path}" if current_path else parent_dir
+                return resolved_str
+            return None
 
     @classmethod
     def download_audio_to_temp(
@@ -235,15 +237,34 @@ class OnlineMediaFetcher:
                 err_str = str(err)
                 if cancel_event.is_set() or "cancelled by the user" in err_str.lower():
                     raise InterruptedError("Download was cancelled by the user.")
-                if idx == 0:
-                    last_error = err
-                    # Only auto-retry with browser cookies if it looks like an auth/login/cookie issue
-                    lower_err = err_str.lower()
-                    needs_auth = any(
-                        w in lower_err
-                        for w in ("login", "cookie", "sign in", "private", "rate-limit", "403", "forbidden", "instagram", "facebook")
+
+                # Retain the most recent/informative failure across retries, prioritizing auth/cookie errors
+                lower_err = err_str.lower()
+                is_auth_err = any(
+                    w in lower_err
+                    for w in (
+                        "login",
+                        "cookie",
+                        "sign in",
+                        "logged in",
+                        "private",
+                        "rate-limit",
+                        "403",
+                        "forbidden",
+                        "401",
+                        "unauthorized",
+                        "authentication",
                     )
-                    if not needs_auth:
+                )
+                if last_error is None or is_auth_err or idx > 0:
+                    last_error = err
+
+                if chosen_browser is not None:
+                    # User explicitly selected a specific browser; do not prompt for fallback permission
+                    break
+
+                if idx == 0:
+                    if not is_auth_err:
                         break
                     if cookie_permission_cb is None or not cookie_permission_cb(platform):
                         break

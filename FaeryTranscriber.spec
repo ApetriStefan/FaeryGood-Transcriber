@@ -62,6 +62,7 @@ hiddenimports += [
     "faery_app.config",
     "faery_app.config.config_manager",
     "faery_app.lifecycle",
+    "faery_app.lifecycle.crash_logger",
     "faery_app.lifecycle.scratch",
     "faery_app.lifecycle.updater",
     "faery_app.models",
@@ -102,6 +103,9 @@ hiddenimports += [
 win_icon = os.path.join(assets_dir, "faery_icon.ico") if os.path.exists(os.path.join(assets_dir, "faery_icon.ico")) else None
 mac_icon = os.path.join(assets_dir, "faery_icon.icns") if os.path.exists(os.path.join(assets_dir, "faery_icon.icns")) else None
 
+mac_entitlements = os.path.join(spec_dir, "macos_entitlements.plist") if os.path.exists(os.path.join(spec_dir, "macos_entitlements.plist")) else None
+use_upx = (sys.platform != "darwin")
+
 block_cipher = None
 
 a = Analysis(
@@ -131,13 +135,13 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=use_upx,
     console=False,  # Windowed GUI mode: zero command-line friction / no terminal black box
     disable_windowed_traceback=False,
     argv_emulation=False,
-    target_arch='x86_64',
-    codesign_identity=None,
-    entitlements_file=None,
+    target_arch=None,
+    codesign_identity="-" if sys.platform == "darwin" else None,
+    entitlements_file=mac_entitlements if sys.platform == "darwin" else None,
     icon=win_icon if sys.platform == 'win32' else mac_icon,
 )
 
@@ -147,7 +151,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
+    upx=use_upx,
     upx_exclude=[],
     name='FaeryTranscriber',
 )

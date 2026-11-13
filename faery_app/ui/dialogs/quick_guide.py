@@ -26,9 +26,18 @@ class QuickGuideDialog(ctk.CTkToplevel):
         super().__init__(parent)
         self.parent_app = parent
         self.title("Faery Good — Creator Quick Start Guide")
-        self.geometry("580x560")
+        width, height = 580, 580
+        self.geometry(f"{width}x{height}")
         self.resizable(False, False)
-        self.attributes("-topmost", True)
+        self.transient(parent)
+        try:
+            px = parent.winfo_rootx() + (parent.winfo_width() - width) // 2
+            py = parent.winfo_rooty() + (parent.winfo_height() - height) // 2
+            self.geometry(f"{width}x{height}+{max(0, px)}+{max(0, py)}")
+        except Exception:
+            pass
+        self.lift()
+        self.focus_set()
         self.configure(fg_color=FAERY_BG)
         if hasattr(parent, "brand"):
             parent.brand.apply_window_icon(self)
@@ -72,6 +81,8 @@ class QuickGuideDialog(ctk.CTkToplevel):
             font=getattr(parent, "font_serif_italic", ctk.CTkFont(family="Georgia", size=12, slant="italic")),
             text_color=FAERY_TEXT_MUTED,
             anchor="w",
+            wraplength=440,
+            justify="left",
         )
         sub.pack(anchor="w")
 
@@ -81,6 +92,8 @@ class QuickGuideDialog(ctk.CTkToplevel):
             "1. PICK A LOCAL FILE, RECORD YOUR MIC, OR PASTE A SOCIAL LINK\n"
             "   • Local File (⌘O / Ctrl+O): Choose any video (.mp4, .mov) or audio (.m4a, .mp3, .wav) file.\n"
             "   • Record Microphone (⌘D / Ctrl+D): Click '🎙️ Record Mic' to capture voice notes directly from your microphone.\n"
+            "     (On macOS: if asked for Microphone access, click Allow — or enable Faery Good Transcriber under "
+            "System Settings → Privacy & Security → Microphone.)\n"
             "   • Online Link (⌘L / Ctrl+L): Paste any link from Instagram, YouTube, TikTok, or Facebook "
             "(or click '📋 Paste Link'). Only the audio stream is fetched into a temporary folder.\n\n"
             "2. GENERATE TRANSCRIPT (⌘Return / Ctrl+Enter)\n"
@@ -93,8 +106,8 @@ class QuickGuideDialog(ctk.CTkToplevel):
             "show notes, and video reference logs.\n"
             "   • 📝 Raw Text: Continuous unsegmented text.\n\n"
             "4. 100% PRIVATE & ON-DEVICE\n"
-            "   All transcription runs 100% privately on your computer. Downloaded and converted "
-            "audio files are strictly temporary and cleaned up automatically immediately after transcription.\n\n"
+            "   All transcription runs 100% privately on your computer. Downloaded, recorded, and "
+            "converted audio files are strictly temporary and cleaned up automatically right after transcription.\n\n"
             "5. SOCIAL LOGIN (FOR INSTAGRAM & FACEBOOK)\n"
             "   Most links transcribe automatically! In 'Auto / Public' mode, if a clip requires sign-in, "
             "the app will ask your permission before reading browser cookies, or you can select your "
